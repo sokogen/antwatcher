@@ -20,13 +20,18 @@ const (
 	MetaReceivedAt    = "received_at"
 	MetaRepositoryID  = "repository_id"
 	MetaRepository    = "repository"
+	// MetaForwardedBy and MetaForwardHops mark a copy re-published by a forward
+	// sink; see Envelope.ForwardedBy and Envelope.ForwardHops.
+	MetaForwardedBy = "antwatcher.forward.by"
+	MetaForwardHops = "antwatcher.forward.hops"
 )
 
 // ToMessage maps an Envelope onto a Watermill message. The message UUID is the
 // delivery GUID, every envelope field is carried in metadata, and the payload is
 // the raw GitHub JSON. Optional fields (action, hook_id, repository_id,
-// repository) are omitted from metadata when empty. The payload slice is shared,
-// not copied: messages are treated as immutable once created.
+// repository, and the forward markers) are omitted from metadata when empty. The
+// payload slice is shared, not copied: messages are treated as immutable once
+// created.
 func ToMessage(env Envelope) *message.Message {
 	msg := message.NewMessage(env.DeliveryGUID, message.Payload(env.Payload))
 	msg.Metadata.Set(MetaDeliveryGUID, env.DeliveryGUID)
@@ -45,6 +50,12 @@ func ToMessage(env Envelope) *message.Message {
 	if env.Repository != "" {
 		msg.Metadata.Set(MetaRepository, env.Repository)
 	}
+	if env.ForwardedBy != "" {
+		msg.Metadata.Set(MetaForwardedBy, env.ForwardedBy)
+	}
+	if env.ForwardHops > 0 {
+		msg.Metadata.Set(MetaForwardHops, strconv.Itoa(env.ForwardHops))
+	}
 	return msg
 }
 
@@ -54,7 +65,8 @@ func ToMessage(env Envelope) *message.Message {
 // different transport UUID; when the metadata key is absent the message UUID is
 // used instead, for messages written before the key existed. schema_version,
 // event, and received_at are required and must parse; schema_version must equal
-// SchemaVersion. Any violation is returned as an error wrapping
+// SchemaVersion; repository_id and the forward hop count must be non-negative
+// integers when present. Any violation is returned as an error wrapping
 // ErrMissingMetadata or ErrInvalidMetadata, which callers treat as permanent.
 func FromMessage(msg *message.Message) (Envelope, error) {
 	if msg == nil {
@@ -107,6 +119,14 @@ func FromMessage(msg *message.Message) (Envelope, error) {
 		}
 	}
 
+	var hops int
+	if text, ok := md[MetaForwardHops]; ok && text != "" {
+		hops, err = strconv.Atoi(text)
+		if err != nil || hops < 0 {
+			return Envelope{}, fmt.Errorf("%w: %s %q is not a non-negative integer", ErrInvalidMetadata, MetaForwardHops, text)
+		}
+	}
+
 	return Envelope{
 		SchemaVersion: version,
 		DeliveryGUID:  guid,
@@ -116,6 +136,8 @@ func FromMessage(msg *message.Message) (Envelope, error) {
 		ReceivedAt:    receivedAt.UTC(),
 		RepositoryID:  repositoryID,
 		Repository:    md[MetaRepository],
+		ForwardedBy:   md[MetaForwardedBy],
+		ForwardHops:   hops,
 		Payload:       []byte(msg.Payload),
 	}, nil
 }

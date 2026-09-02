@@ -22,6 +22,13 @@ type DriverValidator interface {
 	ValidateWith(router Router) error
 }
 
+// IngressValidator is implemented by typed sink driver configurations that must
+// be checked against the ingress bus, for example a forward driver refusing to
+// publish back into the topic it consumes from.
+type IngressValidator interface {
+	ValidateIngress(ingress Bus) error
+}
+
 // Describers maps driver blocks to the Describer that understands them.
 type Describers struct {
 	// Bus is keyed by bus driver name.

@@ -45,6 +45,33 @@ func TestToMessage_OmitsEmptyOptionalMetadata(t *testing.T) {
 	}
 }
 
+func TestToMessage_ForwardMarkers(t *testing.T) {
+	env, err := FromWebhook(webhookHeaders("g", "ping", ""), LoadFixture(t, "ping"), testNow)
+	require.NoError(t, err)
+	md := ToMessage(env).Metadata
+	for _, key := range []string{MetaForwardedBy, MetaForwardHops} {
+		_, present := md[key]
+		assert.False(t, present, "%s must be omitted on a delivery received from GitHub", key)
+	}
+
+	env.ForwardedBy, env.ForwardHops = "downstream", 2
+	msg := ToMessage(env)
+	assert.Equal(t, "downstream", msg.Metadata[MetaForwardedBy])
+	assert.Equal(t, "2", msg.Metadata[MetaForwardHops])
+	assert.Equal(t, env.DeliveryGUID, msg.UUID, "ToMessage keeps the GUID as UUID; the forward sink replaces it")
+
+	out, err := FromMessage(msg)
+	require.NoError(t, err)
+	assert.Equal(t, env, out, "forward markers survive the round trip")
+
+	msg.Metadata.Set(MetaForwardHops, "0")
+	delete(msg.Metadata, MetaForwardedBy)
+	out, err = FromMessage(msg)
+	require.NoError(t, err)
+	assert.Empty(t, out.ForwardedBy)
+	assert.Zero(t, out.ForwardHops)
+}
+
 func TestToMessage_ReceivedAtIsUTC(t *testing.T) {
 	env := Envelope{DeliveryGUID: "g", Event: "ping", SchemaVersion: SchemaVersion, ReceivedAt: testNow}
 	assert.Equal(t, "2026-09-02T08:00:01.123456789Z", ToMessage(env).Metadata[MetaReceivedAt])
@@ -126,6 +153,8 @@ func TestFromMessage_Errors(t *testing.T) {
 		{"missing received_at", func(m *message.Message) { delete(m.Metadata, MetaReceivedAt) }, ErrMissingMetadata, MetaReceivedAt},
 		{"invalid received_at", func(m *message.Message) { m.Metadata.Set(MetaReceivedAt, "yesterday") }, ErrInvalidMetadata, MetaReceivedAt},
 		{"invalid repository_id", func(m *message.Message) { m.Metadata.Set(MetaRepositoryID, "abc") }, ErrInvalidMetadata, MetaRepositoryID},
+		{"non-integer forward hops", func(m *message.Message) { m.Metadata.Set(MetaForwardHops, "two") }, ErrInvalidMetadata, MetaForwardHops},
+		{"negative forward hops", func(m *message.Message) { m.Metadata.Set(MetaForwardHops, "-1") }, ErrInvalidMetadata, MetaForwardHops},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -32,6 +32,12 @@ const (
 // redelivery: it is the message UUID on the ingress bus and the dedup key where
 // the broker supports one. RepositoryID and Repository are zero when the payload
 // has no repository (organization-level events such as ping).
+//
+// ForwardedBy and ForwardHops are set only on copies re-published by a forward
+// sink: the name of the last sink that forwarded the event and how many times it
+// was forwarded. A forward sink refuses an envelope whose hops reached its limit,
+// which is what stops a forwarding loop. Both are zero on a delivery received
+// from GitHub.
 type Envelope struct {
 	SchemaVersion int
 	DeliveryGUID  string
@@ -41,6 +47,8 @@ type Envelope struct {
 	ReceivedAt    time.Time
 	RepositoryID  int64
 	Repository    string
+	ForwardedBy   string
+	ForwardHops   int
 	Payload       json.RawMessage
 }
 

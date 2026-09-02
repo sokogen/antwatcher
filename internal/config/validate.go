@@ -154,12 +154,13 @@ func (r *Recovery) validate() []error {
 
 // ValidateDrivers decodes the selected bus driver block and every sink block
 // through its Describer and runs ValidateWith on the ones that implement
-// DriverValidator. Blocks without a Describer are skipped: their driver is
-// unknown here and the registry reports that at startup.
+// DriverValidator; sink blocks implementing IngressValidator are also checked
+// against the ingress bus. Blocks without a Describer are skipped: their
+// driver is unknown here and the registry reports that at startup.
 func ValidateDrivers(cfg Config, describers Describers) error {
 	var errs []error
 	if d := describers.Bus[cfg.Bus.Driver]; d != nil {
-		if err := validateBlock(d, cfg.Bus.Drivers[cfg.Bus.Driver], cfg.Router); err != nil {
+		if err := validateBlock(d, cfg.Bus.Drivers[cfg.Bus.Driver], cfg.Router, nil); err != nil {
 			errs = append(errs, fmt.Errorf("bus.%s: %w", cfg.Bus.Driver, err))
 		}
 	}
@@ -168,22 +169,28 @@ func ValidateDrivers(cfg Config, describers Describers) error {
 		if d == nil {
 			continue
 		}
-		if err := validateBlock(d, s.Config, cfg.Router); err != nil {
+		if err := validateBlock(d, s.Config, cfg.Router, &cfg.Bus); err != nil {
 			errs = append(errs, fmt.Errorf("sinks[%d] %q: %w", i, s.Name, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func validateBlock(d Describer, node yaml.Node, router Router) error {
+// validateBlock describes node and runs the validators the typed block
+// implements. ingress is nil for the bus block itself.
+func validateBlock(d Describer, node yaml.Node, router Router, ingress *Bus) error {
 	typed, err := d.Describe(node)
 	if err != nil {
 		return err
 	}
+	var errs []error
 	if v, ok := typed.(DriverValidator); ok {
-		return v.ValidateWith(router)
+		errs = append(errs, v.ValidateWith(router))
 	}
-	return nil
+	if v, ok := typed.(IngressValidator); ok && ingress != nil {
+		errs = append(errs, v.ValidateIngress(*ingress))
+	}
+	return errors.Join(errs...)
 }
 
 // sameListener reports whether two listen addresses would bind the same socket,

@@ -29,6 +29,8 @@ type Record struct {
 	ReceivedAt    time.Time       `json:"received_at"`
 	RepositoryID  int64           `json:"repository_id,omitempty"`
 	Repository    string          `json:"repository,omitempty"`
+	ForwardedBy   string          `json:"forwarded_by,omitempty"`
+	ForwardHops   int             `json:"forward_hops,omitempty"`
 	Payload       json.RawMessage `json:"payload"`
 }
 
@@ -52,6 +54,8 @@ func Encode(env event.Envelope) ([]byte, error) {
 		ReceivedAt:    env.ReceivedAt.UTC(),
 		RepositoryID:  env.RepositoryID,
 		Repository:    env.Repository,
+		ForwardedBy:   env.ForwardedBy,
+		ForwardHops:   env.ForwardHops,
 		Payload:       env.Payload,
 	}
 	var buf bytes.Buffer
@@ -89,6 +93,8 @@ func Decode(line []byte) (event.Envelope, error) {
 		ReceivedAt:    rec.ReceivedAt.UTC(),
 		RepositoryID:  rec.RepositoryID,
 		Repository:    rec.Repository,
+		ForwardedBy:   rec.ForwardedBy,
+		ForwardHops:   rec.ForwardHops,
 		Payload:       rec.Payload,
 	}, nil
 }

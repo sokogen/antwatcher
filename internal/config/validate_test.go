@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -170,6 +171,26 @@ func brokerDescriber(raw yaml.Node) (any, error) {
 	return c, nil
 }
 
+// ingressTestConfig refuses to forward into the ingress topic.
+type ingressTestConfig struct {
+	Topic string `yaml:"topic"`
+}
+
+func (c ingressTestConfig) ValidateIngress(ingress Bus) error {
+	if c.Topic == ingress.Topic {
+		return fmt.Errorf("topic %q is the ingress topic", c.Topic)
+	}
+	return nil
+}
+
+func ingressDescriber(raw yaml.Node) (any, error) {
+	var c ingressTestConfig
+	if err := DecodeStrict(raw, &c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 func TestValidateDrivers(t *testing.T) {
 	describers := Describers{
 		Bus:   map[string]Describer{"broker": DescriberFunc(brokerDescriber)},
@@ -204,5 +225,26 @@ func TestValidateDrivers(t *testing.T) {
 		assert.Contains(t, err.Error(), `sinks[0] "f": ack_wait must exceed`)
 		assert.Contains(t, err.Error(), `sinks[1] "g": decode: `)
 		assert.NotContains(t, err.Error(), `"h"`, "blocks without a describer are skipped")
+	})
+
+	t.Run("sink block checked against the ingress bus", func(t *testing.T) {
+		d := Describers{Sinks: map[string]Describer{SinkKey("forward", "loop"): DescriberFunc(ingressDescriber)}}
+		text := "server:\n  webhook_secret: s\nbus:\n  driver: broker\n  topic: in\nsinks:\n  - name: f\n    class: forward\n    driver: loop\n    start_from: now\n    config: {topic: %s}\n"
+		cfg, err := Parse(fmt.Appendf(nil, text, "in"))
+		require.NoError(t, err)
+		err = ValidateDrivers(cfg, d)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `sinks[0] "f": topic "in" is the ingress topic`)
+
+		cfg, err = Parse(fmt.Appendf(nil, text, "out"))
+		require.NoError(t, err)
+		require.NoError(t, ValidateDrivers(cfg, d))
+	})
+
+	t.Run("bus block is not checked against itself", func(t *testing.T) {
+		d := Describers{Bus: map[string]Describer{"loop": DescriberFunc(ingressDescriber)}}
+		cfg, err := Parse([]byte("server:\n  webhook_secret: s\nbus:\n  driver: loop\n  topic: in\n  loop:\n    topic: in\n"))
+		require.NoError(t, err)
+		require.NoError(t, ValidateDrivers(cfg, d))
 	})
 }

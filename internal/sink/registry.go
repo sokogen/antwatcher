@@ -25,6 +25,10 @@ type Deps struct {
 	// BusDrivers is the bus registry a forward driver opens its publisher
 	// through. May be nil for classes that do not need a bus.
 	BusDrivers *bus.Registry
+	// Ingress is the ingress bus configuration (driver and topic) so a
+	// forward driver can refuse to publish back into it. The zero value
+	// disables that check.
+	Ingress config.Bus
 	// Version is the antwatcher version drivers report to their destinations
 	// (for example service.version on OTLP exports). Empty means "dev".
 	Version string

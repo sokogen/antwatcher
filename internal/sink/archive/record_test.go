@@ -82,6 +82,21 @@ func TestEncode_OptionalFieldsOmittedAndUTC(t *testing.T) {
 	assert.Equal(t, env.ReceivedAt.UTC(), got.ReceivedAt)
 }
 
+func TestEncodeDecode_ForwardMarkers(t *testing.T) {
+	env := event.Envelope{
+		SchemaVersion: 1, DeliveryGUID: "g", Event: "ping",
+		ReceivedAt:  time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC),
+		ForwardedBy: "upstream", ForwardHops: 2,
+		Payload: []byte(`{"zen":"x"}`),
+	}
+	line, err := archive.Encode(env)
+	require.NoError(t, err)
+	assert.Contains(t, string(line), `"forwarded_by":"upstream","forward_hops":2,`)
+	got, err := archive.Decode(line)
+	require.NoError(t, err)
+	assert.Equal(t, env, got, "a forwarded copy is archived with its markers")
+}
+
 func TestEncode_BadPayloadIsPermanent(t *testing.T) {
 	for name, payload := range map[string][]byte{
 		"nil":     nil,
