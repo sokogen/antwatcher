@@ -201,12 +201,13 @@ Key properties this plan implements:
 - [x] run tests - must pass before next task
 
 ### Task 7: Webhook receiver
-- [ ] `internal/receiver/handler.go`: `New(cfg, b bus.Bus, topic, metrics, logger) http.Handler` mounting only `POST <webhook_path>` and `GET /healthz` (for load balancers); readiness lives on the admin server and depends on the bus only (sinks being down must not fail ingress)
-- [ ] webhook flow: reject non-POST; `http.MaxBytesReader` (default 25 MiB); verify `X-Hub-Signature-256` with HMAC-SHA256 over the raw body via `hmac.Equal` (401 on mismatch/missing); `ping` → 200 without publishing; `event.FromWebhook` (400 on error) → `b.Publish(ctx with server.publish_timeout, default 8s — under GitHub's 10s limit, event.ToMessage(env))` (503 on error/timeout, body includes GUID) → 200 with `{"delivery": guid}`; info log with guid/event/action/repo/latency
-- [ ] metrics: `antwatcher_webhooks_total{event,result}` (published, ping, rejected_signature, bad_request, publish_failed, publish_timeout), `antwatcher_webhook_publish_seconds`, `antwatcher_webhooks_inflight`
-- [ ] `internal/receiver/server.go`: `Run(ctx, cfg, handler) error` with `http.Server` timeouts and graceful shutdown
-- [ ] write tests with `httptest` + gochannel bus + failing/slow bus stubs: valid signature → 200 and message on the bus; bad/missing signature → 401 without publish; ping → 200 without publish; oversize → 413; invalid JSON → 400; publish error → 503; publish slower than timeout → 503 within the timeout; ordering test proving 2xx is written only after `Publish` returned nil; `/status`/`/metrics` are not served on this listener
-- [ ] run tests - must pass before next task
+- [x] `internal/receiver/handler.go`: `New(cfg, b bus.Bus, topic, metrics, logger) http.Handler` mounting only `POST <webhook_path>` and `GET /healthz` (for load balancers); readiness lives on the admin server and depends on the bus only (sinks being down must not fail ingress)
+- [x] webhook flow: reject non-POST; `http.MaxBytesReader` (default 25 MiB); verify `X-Hub-Signature-256` with HMAC-SHA256 over the raw body via `hmac.Equal` (401 on mismatch/missing); `ping` → 200 without publishing; `event.FromWebhook` (400 on error) → `b.Publish(ctx with server.publish_timeout, default 8s — under GitHub's 10s limit, event.ToMessage(env))` (503 on error/timeout, body includes GUID) → 200 with `{"delivery": guid}`; info log with guid/event/action/repo/latency
+- [x] metrics: `antwatcher_webhooks_total{event,result}` (published, ping, rejected_signature, bad_request, publish_failed, publish_timeout), `antwatcher_webhook_publish_seconds`, `antwatcher_webhooks_inflight`
+- [x] `internal/receiver/server.go`: `Run(ctx, cfg, handler) error` with `http.Server` timeouts and graceful shutdown
+- [x] write tests with `httptest` + gochannel bus + failing/slow bus stubs: valid signature → 200 and message on the bus; bad/missing signature → 401 without publish; ping → 200 without publish; oversize → 413; invalid JSON → 400; publish error → 503; publish slower than timeout → 503 within the timeout; ordering test proving 2xx is written only after `Publish` returned nil; `/status`/`/metrics` are not served on this listener
+- [x] run tests - must pass before next task
+- ➕ note: `New` takes no separate `topic` argument; the bus already carries its topic (`bus.Topic()`), so the receiver cannot publish to a different one. Requests rejected before signature verification (401, 413) are counted with `event="unknown"` so an unauthenticated caller cannot create metric series.
 
 ### Task 8: Sink core: classes, errors, driver registry, router assembly, stalled handling
 - [ ] `internal/sink/sink.go`: `Class` enum {trace, log, analytics, archive, forward}; `Sink` interface `Name() string`, `Class() Class`, `Process(ctx, event.Envelope) error`, `Close() error`; `Instance{Sink; StartFrom bus.StartPosition}`
