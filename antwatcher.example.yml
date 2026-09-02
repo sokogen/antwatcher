@@ -1,0 +1,190 @@
+# antwatcher example configuration.
+#
+# Every field is shown with its default where one exists. Values may reference
+# environment variables as ${VAR} or ${VAR:-default}; a reference to an undefined
+# variable without a default fails loading. There is no escape for a literal "${".
+#
+# Check a configuration without starting the service:
+#   antwatcher serve -config antwatcher.yml -check
+
+server:
+  # Address of the webhook listener. Only the webhook path and GET /healthz are
+  # served here; metrics and status live on the admin listener.
+  listen: ":8080"
+  # Path GitHub posts deliveries to.
+  webhook_path: /webhook
+  # Secret configured on the GitHub webhook; every delivery is verified with
+  # HMAC-SHA256 over the raw body. Required.
+  webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+  # Externally visible webhook URL. Informational, shown in /status.
+  public_url: https://antwatcher.example.com/webhook
+  # Maximum accepted request body (25 MiB, the GitHub payload limit).
+  max_body_bytes: 26214400
+  # Upper bound for publishing one delivery to the bus. GitHub gives up after
+  # 10s, so keep this below it; on timeout the receiver answers 503 and GitHub
+  # records a failed delivery that recovery can redeliver.
+  publish_timeout: 8s
+
+admin:
+  # Address of the admin listener: /metrics, /status, /healthz, /readyz.
+  # Must differ from server.listen. Do not expose it publicly.
+  listen: "127.0.0.1:9090"
+  # How often consumer lag is polled from the bus into antwatcher_bus_consumer_lag.
+  lag_interval: 15s
+
+bus:
+  # Bus driver: gochannel (in-process, non-durable, development only) or
+  # nats-jetstream (embedded or external, durable).
+  driver: nats-jetstream
+  # Topic (JetStream subject) carrying every webhook delivery.
+  topic: antwatcher.events
+  # What to do when the driver lacks a capability the configuration needs:
+  #   fail    - refuse to start (recommended in production)
+  #   degrade - start with a warning shown in /status (for example a non-durable
+  #             bus, or start_from: earliest on a bus without history)
+  on_missing_capability: fail
+  # Driver blocks are keyed by driver name; only the selected one is used.
+  nats-jetstream:
+    # Run an in-process nats-server with JetStream (single replica only).
+    embedded: true
+    # JetStream storage directory for the embedded server.
+    store_dir: ./data/nats
+    # External server URL when embedded is false, e.g. nats://nats:4222.
+    url: ""
+    # Credentials for an external server (contents of a .creds file or a token).
+    credentials: ${NATS_CREDENTIALS:-}
+    # Stream name.
+    stream: ANTWATCHER
+    # Retention window of the raw history. A sink that is down longer than this
+    # loses the oldest part of its backlog; size disk accordingly.
+    retention: 168h
+    # Window in which a redelivered webhook with the same delivery GUID is
+    # collapsed by the broker.
+    dedup_window: 2h
+    # Time the broker waits for an ack before redelivering. Must exceed
+    # router.process_timeout by at least 10s (validated).
+    ack_wait: 90s
+    # Redelivery delay after a failed attempt grows from min to max with the
+    # delivery count.
+    nak_delay_min: 5s
+    nak_delay_max: 5m
+
+router:
+  # Time allowed for in-flight handlers to finish on shutdown.
+  close_timeout: 30s
+  # Deadline for one sink.Process call. Slower destinations time out and the
+  # message is redelivered later instead of racing a concurrent redelivery.
+  process_timeout: 60s
+
+# Each sink is an independent named consumer of the bus ("sink-<name>") with its
+# own position. Renaming a sink creates a new consumer.
+#
+#   name        unique, [a-z0-9-]
+#   class       trace | log | analytics | archive | forward
+#   driver      class-specific driver
+#   start_from  required, no default:
+#                 earliest - replay the retained history on first start
+#                 now      - start with the next event
+#   config      driver block, documented per driver
+sinks:
+  # Traces: one span tree per workflow run (workflow -> jobs -> steps), exported
+  # over OTLP to Tempo, Jaeger, or an OpenTelemetry collector.
+  - name: tempo
+    class: trace
+    driver: otlp
+    start_from: earliest
+    config:
+      endpoint: "tempo:4317"
+      protocol: grpc            # grpc | http
+      insecure: true            # plaintext; set false and configure tls for TLS
+      timeout: 10s
+      compression: none         # none | gzip
+      headers: {}               # extra headers, values may be secrets
+
+  # Logs to stdout: one JSON line per webhook event, useful for development
+  # and for platforms that ship container output.
+  - name: events
+    class: log
+    driver: stdout
+    start_from: now
+    config:
+      stream: stdout            # stdout | stderr
+      pretty: false
+
+  # Logs over OTLP (for Loki through an OpenTelemetry collector). Records carry
+  # trace and span IDs so they correlate with the traces above.
+  - name: loki
+    class: log
+    driver: otlp
+    start_from: now
+    config:
+      endpoint: "otel-collector:4318"
+      protocol: http
+      headers:
+        Authorization: ${OTLP_AUTH:-}
+
+  # Analytics: one row per run, job, and step state, appended to BigQuery.
+  # The base table is at-least-once; query the <table>_current view.
+  - name: bq
+    class: analytics
+    driver: bigquery
+    start_from: earliest
+    config:
+      project: my-proj
+      dataset: github
+      table: actions
+      ensure_table: true        # create the table on first use
+      ensure_view: true         # create the deduplicating <table>_current view
+
+  # Archive: raw webhook payloads as JSON lines with rotation and compression.
+  - name: raw
+    class: archive
+    driver: filesystem
+    start_from: earliest
+    config:
+      dir: ./data/archive
+      compress: gzip            # none | gzip
+      rotate_every: 1h
+      rotate_size: 128MiB
+
+  # Forward: re-publish every raw event to another bus (same drivers as `bus`).
+  - name: downstream
+    class: forward
+    driver: bus
+    start_from: now
+    config:
+      driver: nats-jetstream
+      topic: github.events
+      max_hops: 3               # drop copies that already hopped this many times
+      nats-jetstream:
+        embedded: false
+        url: nats://other:4222
+        credentials: ${DOWNSTREAM_NATS_CREDENTIALS:-}
+
+recovery:
+  # Scan the GitHub webhook deliveries API for deliveries without a successful
+  # attempt and ask GitHub to redeliver them. Repairs receiver outages shorter
+  # than GitHub's 3-day window. Requires auth and at least one target.
+  enabled: false
+  auth:
+    type: token                 # token (github_app is reserved for a later version)
+    # Token with admin:repo_hook / admin:org_hook scope.
+    token: ${GITHUB_TOKEN:-}
+  # GitHub Enterprise API base URL; empty for github.com.
+  api_base_url: ""
+  # Interval between scans.
+  interval: 10m
+  # How far back the first scan after start looks (max 72h). Later scans are
+  # incremental from the previous scan minus overlap.
+  lookback: 72h
+  overlap: 15m
+  # Deliveries younger than grace, or redelivered within grace, are left alone.
+  grace: 5m
+  # Upper bound of redelivery requests per scan (rate-limit protection).
+  max_per_scan: 100
+  # Webhooks to scan: repository webhooks by repo, organization webhooks by org
+  # and hook id.
+  targets:
+    - repo: owner/name
+    - org: name
+      hook_id: 987654

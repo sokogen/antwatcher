@@ -1,3 +1,14 @@
 .DS_Store
 .ralphex/
 .ralphex-run.sh
+
+# build artifacts
+/bin/
+/antwatcher
+/dist/
+coverage.out
+coverage.html
+
+# local runtime state
+/data/
+antwatcher.yml

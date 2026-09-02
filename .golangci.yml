@@ -1,0 +1,69 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - revive
+    - gocritic
+    - gosec
+    - testifylint
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    revive:
+      rules:
+        - name: exported
+          arguments: ["checkPrivateReceivers", "disableStutteringCheck"]
+        - name: package-comments
+        - name: unused-parameter
+        - name: var-naming
+        - name: error-strings
+        - name: error-return
+        - name: errorf
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: receiver-naming
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - unnamedResult
+        - paramTypeCombine
+    gosec:
+      excludes:
+        - G304 # file inclusion via variable: config and archive paths come from the operator
+    testifylint:
+      enable-all: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/sokogen/antwatcher
