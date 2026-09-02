@@ -12,7 +12,7 @@ GOLANGCI_LINT         := $(BIN_DIR)/golangci-lint
 
 CONFIG      ?= antwatcher.yml
 
-.PHONY: all build test lint run check tidy clean
+.PHONY: all build test lint run check tidy clean readme docker
 
 all: lint test build
 
@@ -38,6 +38,12 @@ check: build
 
 tidy:
 	go mod tidy
+
+readme:
+	sh scripts/readme-config.sh
+
+docker:
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t antwatcher:$(VERSION) .
 
 clean:
 	rm -rf $(BIN_DIR) coverage.out

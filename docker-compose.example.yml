@@ -1,0 +1,89 @@
+# antwatcher with an OpenTelemetry collector, Grafana Tempo, Loki, and Grafana.
+#
+#   export GITHUB_WEBHOOK_SECRET=...
+#   docker compose -f docker-compose.example.yml up --build
+#
+#   webhook   http://localhost:8080/webhook        (expose through an HTTPS proxy for GitHub)
+#   status    http://127.0.0.1:9090/status
+#   grafana   http://localhost:3000                (anonymous admin; Tempo and Loki provisioned)
+#
+# antwatcher runs an embedded JetStream store under the antwatcher-data volume,
+# exports traces and logs over OTLP to the collector, prints every event to its
+# stdout, and archives the raw payloads under /data/archive. The collector fans
+# traces out to Tempo and logs to Loki. Supporting configuration lives in
+# deploy/compose/. Image tags are unpinned for the example; pin them in a real
+# deployment.
+
+services:
+  antwatcher:
+    build: .
+    image: antwatcher:local
+    restart: unless-stopped
+    environment:
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?set GITHUB_WEBHOOK_SECRET}
+      ANTWATCHER_PUBLIC_URL: ${ANTWATCHER_PUBLIC_URL:-http://localhost:8080/webhook}
+    volumes:
+      - ./deploy/compose/antwatcher.yml:/etc/antwatcher/antwatcher.yml:ro
+      - antwatcher-data:/data
+    ports:
+      - "8080:8080"             # webhook listener
+      - "127.0.0.1:9090:9090"   # admin listener: metrics, status; loopback only
+    depends_on:
+      - otel-collector
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - tempo
+      - loki
+
+  tempo-init:
+    # Tempo runs as uid 10001; give it the volume before it starts.
+    image: grafana/tempo:latest
+    user: root
+    entrypoint: ["chown", "10001:10001", "/var/tempo"]
+    volumes:
+      - tempo-data:/var/tempo
+
+  tempo:
+    image: grafana/tempo:latest
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./deploy/compose/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    depends_on:
+      tempo-init:
+        condition: service_completed_successfully
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./deploy/compose/loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./deploy/compose/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+      - loki
+
+volumes:
+  antwatcher-data:
+  tempo-data:
+  loki-data:
