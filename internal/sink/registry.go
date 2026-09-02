@@ -25,6 +25,9 @@ type Deps struct {
 	// BusDrivers is the bus registry a forward driver opens its publisher
 	// through. May be nil for classes that do not need a bus.
 	BusDrivers *bus.Registry
+	// Version is the antwatcher version drivers report to their destinations
+	// (for example service.version on OTLP exports). Empty means "dev".
+	Version string
 }
 
 // DriverFactory builds a sink named name from its opaque configuration block
