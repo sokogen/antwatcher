@@ -1,0 +1,117 @@
+{
+  "action": "requested",
+  "workflow_run": {
+    "id": 15000000001,
+    "name": "CI",
+    "node_id": "WFR_kwLOOt4hcc8AAAADfOc5QQ",
+    "head_branch": "main",
+    "head_sha": "3f1c9e2b7a6d5c4e8f0a1b2c3d4e5f6a7b8c9d0e",
+    "path": ".github/workflows/ci.yml",
+    "display_title": "feat: project skeleton, config core, build tooling",
+    "run_number": 42,
+    "event": "push",
+    "status": "queued",
+    "conclusion": null,
+    "workflow_id": 12345678,
+    "check_suite_id": 30000000001,
+    "check_suite_node_id": "CS_kwDOOt4hcc8AAAAG-2j5AQ",
+    "url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001",
+    "html_url": "https://github.com/sokogen/antwatcher/actions/runs/15000000001",
+    "pull_requests": [],
+    "created_at": "2026-09-02T10:00:00Z",
+    "updated_at": "2026-09-02T10:00:00Z",
+    "actor": {
+      "login": "sokogen",
+      "id": 1234567,
+      "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+      "type": "User",
+      "site_admin": false
+    },
+    "run_attempt": 1,
+    "referenced_workflows": [],
+    "run_started_at": "2026-09-02T10:00:00Z",
+    "triggering_actor": {
+      "login": "sokogen",
+      "id": 1234567,
+      "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+      "type": "User",
+      "site_admin": false
+    },
+    "jobs_url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001/jobs",
+    "logs_url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001/logs",
+    "check_suite_url": "https://api.github.com/repos/sokogen/antwatcher/check-suites/30000000001",
+    "artifacts_url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001/artifacts",
+    "cancel_url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001/cancel",
+    "rerun_url": "https://api.github.com/repos/sokogen/antwatcher/actions/runs/15000000001/rerun",
+    "previous_attempt_url": null,
+    "workflow_url": "https://api.github.com/repos/sokogen/antwatcher/actions/workflows/12345678",
+    "head_commit": {
+      "id": "3f1c9e2b7a6d5c4e8f0a1b2c3d4e5f6a7b8c9d0e",
+      "tree_id": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+      "message": "feat: project skeleton, config core, build tooling",
+      "timestamp": "2026-09-02T09:59:50Z",
+      "author": { "name": "Dev", "email": "dev@example.com" },
+      "committer": { "name": "Dev", "email": "dev@example.com" }
+    },
+    "repository": {
+      "id": 987654321,
+      "node_id": "R_kgDOOt4hcQ",
+      "name": "antwatcher",
+      "full_name": "sokogen/antwatcher",
+      "private": false,
+      "owner": { "login": "sokogen", "id": 1234567, "type": "User" },
+      "html_url": "https://github.com/sokogen/antwatcher"
+    },
+    "head_repository": {
+      "id": 987654321,
+      "node_id": "R_kgDOOt4hcQ",
+      "name": "antwatcher",
+      "full_name": "sokogen/antwatcher",
+      "private": false,
+      "owner": { "login": "sokogen", "id": 1234567, "type": "User" },
+      "html_url": "https://github.com/sokogen/antwatcher"
+    }
+  },
+  "workflow": {
+    "id": 12345678,
+    "node_id": "W_kwDOOt4hcc4AvGoG",
+    "name": "CI",
+    "path": ".github/workflows/ci.yml",
+    "state": "active",
+    "created_at": "2026-08-30T12:00:00Z",
+    "updated_at": "2026-08-30T12:00:00Z",
+    "url": "https://api.github.com/repos/sokogen/antwatcher/actions/workflows/12345678",
+    "html_url": "https://github.com/sokogen/antwatcher/blob/main/.github/workflows/ci.yml",
+    "badge_url": "https://github.com/sokogen/antwatcher/workflows/CI/badge.svg"
+  },
+  "repository": {
+    "id": 987654321,
+    "node_id": "R_kgDOOt4hcQ",
+    "name": "antwatcher",
+    "full_name": "sokogen/antwatcher",
+    "private": false,
+    "owner": {
+      "login": "sokogen",
+      "id": 1234567,
+      "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+      "type": "User",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/sokogen/antwatcher",
+    "description": "GitHub Actions webhooks to traces, logs, analytics, archives",
+    "fork": false,
+    "url": "https://api.github.com/repos/sokogen/antwatcher",
+    "created_at": "2026-08-30T11:00:00Z",
+    "updated_at": "2026-09-02T09:59:55Z",
+    "pushed_at": "2026-09-02T09:59:55Z",
+    "default_branch": "main",
+    "visibility": "public"
+  },
+  "sender": {
+    "login": "sokogen",
+    "id": 1234567,
+    "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+    "type": "User",
+    "site_admin": false
+  }
+}
