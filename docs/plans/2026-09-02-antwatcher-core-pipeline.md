@@ -91,6 +91,8 @@ Key properties this plan implements:
   internal/otlp/               OTLP client: config, TLS/auth, gRPC + HTTP, retry, classification
   internal/ghclient/           go-github wrapper for hook deliveries
   internal/recovery/           scan/group/redeliver loop
+  internal/archtest/           architecture rules as tests: no driver imports in core, no Actions API,
+                               no handler-side retry/sleep/ack, every sink driver classifies errors
   docs/adr/                    0001 architecture, 0002 bus, 0003 model & classes, 0004 errors & retries
   ```
 
@@ -304,15 +306,15 @@ Key properties this plan implements:
 - ➕ [x] `errgroup` replaced by per-component tasks with detached contexts: an errgroup cancels every component at once on the first error, which contradicts the ordered shutdown; `run` reacts to the root context or the first failure and stops the components one by one (`internal/sink` handler contexts are likewise detached from the router close so in-flight `Process` calls finish within `close_timeout`; `receiver.Server.Close` added to simulate a listener failure)
 
 ### Task 19: Verify acceptance criteria
-- [ ] verify every guarantee in the Technical Details table has a test or an explicit Post-Completion note
-- [ ] verify receiver never returns 2xx before `Bus.Publish` succeeded (code review + Task 7 test) and that `serve` refuses a non-durable bus in `fail` mode
-- [ ] verify core packages import no concrete driver (`go list -deps` check as a test: `internal/receiver`, `internal/sink` root, `internal/recovery`, `cmd` wiring excluded, must not depend on `internal/bus/natsjs` or any `drivers/*`)
-- [ ] verify no code path calls the Actions REST API (grep for `Actions.` in go-github usage)
-- [ ] verify no Watermill `Retry`/`Poison` middleware, no `time.Sleep` in router handlers, no unconditional `Ack` of failed messages, and `MaxDeliver` unlimited in the NATS driver; verify every driver classifies errors (grep for `Permanent(` in each driver package); verify no sink constructor performs a network call (constructors run in tests with unroutable endpoints)
-- [ ] verify `-check` and `/status` output contain no secret values (test feeds known secrets and asserts absence)
-- [ ] run full test suite with `-race`; run `make lint` - all issues must be fixed
-- [ ] verify test coverage meets project standard (80%+ per package excluding `cmd/`)
-- [ ] verify `antwatcher.example.yml` passes `serve -check`
+- [x] verify every guarantee in the Technical Details table has a test or an explicit Post-Completion note (the Guarantees table below now names the tests; the two retention/3-day rows are design limits documented in ADR 0001 in Task 20)
+- [x] verify receiver never returns 2xx before `Bus.Publish` succeeded (code review + Task 7 test) and that `serve` refuses a non-durable bus in `fail` mode (reviewed `receiver.serveWebhook`: the only 200 after authentication is written after `Publish` returned nil, pinned by `TestWebhook_StatusWrittenOnlyAfterPublishReturned`; `TestServe_StartupFailures/non-durable bus in fail mode`)
+- [x] verify core packages import no concrete driver (`go list -deps` check as a test: `internal/receiver`, `internal/sink` root, `internal/recovery`, `cmd` wiring excluded, must not depend on `internal/bus/natsjs` or any `drivers/*`) — `internal/archtest.TestOnlyCmdDependsOnConcreteDrivers`, applied to every non-cmd package (gochannel included)
+- [x] verify no code path calls the Actions REST API (grep for `Actions.` in go-github usage) — `archtest.TestActionsRESTAPIIsNeverUsed`: AST scan for any `Actions` selector, go-github confined to `internal/ghclient`, and its call surface limited to `ListHookDeliveries`, `RedeliverHookDelivery`, `ListHooks`
+- [x] verify no Watermill `Retry`/`Poison` middleware, no `time.Sleep` in router handlers, no unconditional `Ack` of failed messages, and `MaxDeliver` unlimited in the NATS driver; verify every driver classifies errors (grep for `Permanent(` in each driver package); verify no sink constructor performs a network call (constructors run in tests with unroutable endpoints) — `archtest.TestHandlersNeverSleepRetryOrAckThemselves` (only `middleware.Recoverer` module-wide; no `time.Sleep`, `.Ack()`, `.Nack()` under `internal/sink/**`, `receiver`, `recovery`); `MaxDeliver: -1` asserted by natsjs `TestExistingConsumerKeepsDeliverPolicy`; `archtest.TestEverySinkDriverClassifiesErrors` (each of the 6 driver packages or the client/class package it delegates to calls `sink.Permanent`); constructors: bigquery `TestFactory_BuildsWithoutNetwork`, otlp `TestNew_DoesNotDialAndUnreachableIsRetryable` + `TestDriver_UnreachableEndpointIsRetryableAtProcess`, forward/bus `TestFactory_UnreachableTargetStartsDegraded`
+- [x] verify `-check` and `/status` output contain no secret values (test feeds known secrets and asserts absence) — `TestServeCheck_ExampleConfig` feeds five env secrets, `TestServe_EndToEnd` and `TestServe_DegradedDestinationsDoNotFailStartup` assert the raw `/status` body, `config.TestRedacted`; manual `serve -check` on the example with probe secrets printed none
+- [x] run full test suite with `-race`; run `make lint` - all issues must be fixed (all packages pass; golangci-lint 0 issues)
+- [x] verify test coverage meets project standard (80%+ per package excluding `cmd/`) — lowest is `internal/sink/archive` 85.8%, natsjs 86.5%; `internal/bus/bustest` reports 0% because it is the conformance suite itself (test-support code executed by the gochannel and natsjs driver tests, no tests of its own); `internal/archtest` has no statements
+- [x] verify `antwatcher.example.yml` passes `serve -check` (`TestServeCheck_ExampleConfig` and `make check CONFIG=antwatcher.example.yml` with the five env vars set: exit 0)
 
 ### Task 20: [Final] Documentation and packaging
 - [ ] `README.md`: what it is, architecture diagram (text), guarantees table, quick start (embedded NATS + log/stdout + archive/filesystem), config reference generated from `antwatcher.example.yml`, sink classes and drivers matrix, bus drivers and capability matrix, GitHub webhook setup, recovery token permissions, sizing notes (retention, dedup window), single-replica notes (embedded NATS, recovery), example Prometheus alert rules (lag growing, stalled sink, last-success age, publish failures)
@@ -538,23 +540,25 @@ recovery:
 ### Guarantees
 | Situation | Behavior | Verified by |
 |---|---|---|
-| Sink temporarily unavailable | backlog kept on the bus and redelivered with growing delay **while the event is inside bus retention**; lag visible | Task 8 integration test |
-| Sink down longer than bus retention | oldest part of its backlog is gone; stated in docs and `/status` | ADR 0001, Task 20 docs |
-| Sink hits a permanent error or an undecodable message | that message is stalled for that sink (by UUID), re-attempted at broker pace, nothing discarded, others continue | Task 8 tests |
-| Destination rejects part of an OTLP export | counted as rejected for that destination, not retried (protocol rule) | Task 9 tests |
-| Destination unreachable at startup | sink starts degraded; webhook path unaffected | Task 18 tests |
-| Process restart | each sink resumes from its durable consumer position | Task 5 conformance, Task 18 e2e |
-| Receiver unavailable or publish slow | GitHub records failed delivery (503 / timeout) | Task 7 tests |
-| Receiver back within 3 days, recovery enabled | full scan at start, incremental scans after; redelivery of GUIDs without a 2xx | Task 17 tests + Post-Completion drill |
-| GitHub API down or token invalid | recovery degraded with metric and status; ingress continues | Task 17, 18 tests |
-| Duplicate webhook | accepted; broker dedup where available; deterministic IDs make projections idempotent; analytics dedups in the view | Task 5, 10, 12 tests |
-| New sink | earliest retained message when the bus replays; policy otherwise | Task 4 policy, Task 18 e2e |
-| Bus without a required capability | startup fails, or degrades with a warning shown in `/status` | Task 4, 8, 18 |
-| Secrets in output | `-check` and `/status` never print secret values | Task 1, 19 |
-| History older than bus retention | not recoverable by design | ADR 0001 |
-| Missed ingress older than GitHub 3-day window | considered lost | ADR 0001 |
-| Actions REST API | never used for reconstruction | Task 19 grep check |
-| Service degradation | lag, stalled, failures, last-success age exported | Task 6, 8, 17 metric tests |
+| Sink temporarily unavailable | backlog kept on the bus and redelivered with growing delay **while the event is inside bus retention**; lag visible | sink `TestRouter_JetStreamBacklogPerSink`, `TestRouter_RetryableErrorNacksAndRedelivers`; natsjs `TestNakDelayGrowsBetweenRedeliveries`, `TestLagReflectsUnackedMessages` |
+| Sink down longer than bus retention | oldest part of its backlog is gone; stated in docs and `/status` | natsjs `TestStreamCreatedWithRetentionDedupAndLimits` (retention is a stream limit); ADR 0001 and README (Task 20) |
+| Sink hits a permanent error or an undecodable message | that message is stalled for that sink (by UUID), re-attempted at broker pace, nothing discarded, others continue | sink `TestRouter_PermanentErrorStallsAndClearsOnSuccess`, `TestRouter_UndecodableMessageStallsAndIsNeverAcked`, `TestRouter_OtherSinksContinueWhileOneIsStalled` |
+| Destination rejects part of an OTLP export | counted as rejected for that destination, not retried (protocol rule) | otlp `TestGRPC_PartialSuccessCountedNotRetried`, `TestHTTP_PartialSuccess` |
+| Destination unreachable at startup | sink starts degraded; webhook path unaffected | cmd `TestServe_DegradedDestinationsDoNotFailStartup`; trace/log otlp `TestDriver_UnreachableEndpointIsRetryableAtProcess`; forward/bus `TestFactory_UnreachableTargetStartsDegraded`; bigquery `TestFactory_BuildsWithoutNetwork` |
+| Process restart | each sink resumes from its durable consumer position | bustest `DurableConsumers` (natsjs `TestConformance`), `TestUnackedMessageRedeliveredAfterSubscriberClose`; cmd `TestServe_EndToEnd` (restart on the same store, no duplicates) |
+| Receiver unavailable or publish slow | GitHub records failed delivery (503 / timeout) | receiver `TestWebhook_PublishErrorIs503WithGUID`, `TestWebhook_SlowPublishTimesOutWithin503`, `TestWebhook_StatusWrittenOnlyAfterPublishReturned` |
+| Receiver back within 3 days, recovery enabled | full scan at start, incremental scans after; redelivery of GUIDs without a 2xx | recovery `TestPlan`, `TestScan_WindowsAndRedelivery`, `TestScan_ClampsIncrementalWindowToLookback`; Post-Completion recovery drill |
+| GitHub API down or token invalid | recovery degraded with metric and status; ingress continues | recovery `TestScan_ListErrorsDegradeAndRecover`; cmd `TestServe_DegradedDestinationsDoNotFailStartup` |
+| Duplicate webhook | accepted; broker dedup where available; deterministic IDs make projections idempotent; analytics dedups in the view | bustest `Deduplicates`, natsjs `TestDeduplicatesFollowsDedupWindow`; model `TestIDs_DeterministicAndDistinct`; trace `TestProject_Deterministic`; analytics `TestCurrentViewSQL_Golden` |
+| New sink | earliest retained message when the bus replays; policy otherwise | bus `TestResolveConsumer`; cmd `TestServe_EndToEnd` (late sink with `earliest` receives history) |
+| Bus without a required capability | startup fails, or degrades with a warning shown in `/status` | bus `TestResolveIngress`, `TestResolveConsumer`; sink `TestRouter_EarliestOnBusWithoutReplay`; cmd `TestServe_StartupFailures` |
+| Secrets in output | `-check` and `/status` never print secret values | cmd `TestServeCheck_ExampleConfig`, `TestServe_EndToEnd`, `TestServe_DegradedDestinationsDoNotFailStartup`; config `TestRedacted`; recovery `TestStatus_HasNoSecretsAndRendersJSON` |
+| History older than bus retention | not recoverable by design | ADR 0001 (design limit, no test) |
+| Missed ingress older than GitHub 3-day window | considered lost | recovery `TestScan_DropsPendingOlderThanLookback`; ADR 0001 |
+| Actions REST API | never used for reconstruction | archtest `TestActionsRESTAPIIsNeverUsed` |
+| Core package imports a concrete driver | build of the architecture test fails | archtest `TestOnlyCmdDependsOnConcreteDrivers` |
+| Handler-side retry, sleep, or ack; driver without error classification | architecture test fails | archtest `TestHandlersNeverSleepRetryOrAckThemselves`, `TestEverySinkDriverClassifiesErrors` |
+| Service degradation | lag, stalled, failures, last-success age exported | metrics `TestNew_EveryFamilyIsRegisteredAndNamedPerPlan`; sink router and stalled tests, recovery `TestScan_ListErrorsDegradeAndRecover` assert the series |
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
