@@ -1,0 +1,167 @@
+package natsjs
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/nats-io/nats-server/v2/server"
+)
+
+// readyTimeout bounds the embedded server start.
+const readyTimeout = 10 * time.Second
+
+// StartEmbedded starts an in-process nats-server with JetStream storing data
+// in cfg.StoreDir. The server has no TCP listener; clients connect through
+// nats.InProcessServer(srv). logger receives the server's own log lines; nil
+// discards them. The caller stops the server with Shutdown followed by
+// WaitForShutdown.
+func StartEmbedded(cfg Config, logger *slog.Logger) (*server.Server, error) {
+	if cfg.StoreDir == "" {
+		return nil, errors.New("natsjs: store_dir is required for the embedded server")
+	}
+	if err := os.MkdirAll(cfg.StoreDir, 0o750); err != nil {
+		return nil, fmt.Errorf("natsjs: create store_dir: %w", err)
+	}
+	opts := &server.Options{
+		ServerName: "antwatcher",
+		DontListen: true,
+		JetStream:  true,
+		StoreDir:   cfg.StoreDir,
+		NoLog:      true,
+		NoSigs:     true,
+	}
+	srv, err := server.NewServer(opts)
+	if err != nil {
+		return nil, fmt.Errorf("natsjs: embedded server: %w", err)
+	}
+	if logger != nil {
+		srv.SetLoggerV2(serverLogger{logger.With("component", "nats-server")}, false, false, false)
+	}
+	srv.Start()
+	if !srv.ReadyForConnections(readyTimeout) {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+		return nil, fmt.Errorf("natsjs: embedded server not ready within %s", readyTimeout)
+	}
+	return srv, nil
+}
+
+// serverLogger routes nats-server log lines to slog (implements server.Logger).
+type serverLogger struct{ l *slog.Logger }
+
+// Noticef implements server.Logger at info level.
+func (s serverLogger) Noticef(format string, v ...any) { s.l.Info(fmt.Sprintf(format, v...)) }
+
+// Warnf implements server.Logger at warn level.
+func (s serverLogger) Warnf(format string, v ...any) { s.l.Warn(fmt.Sprintf(format, v...)) }
+
+// Fatalf implements server.Logger at error level; the server itself decides
+// whether to stop.
+func (s serverLogger) Fatalf(format string, v ...any) { s.l.Error(fmt.Sprintf(format, v...)) }
+
+// Errorf implements server.Logger at error level.
+func (s serverLogger) Errorf(format string, v ...any) { s.l.Error(fmt.Sprintf(format, v...)) }
+
+// Debugf implements server.Logger at debug level.
+func (s serverLogger) Debugf(format string, v ...any) { s.l.Debug(fmt.Sprintf(format, v...)) }
+
+// Tracef implements server.Logger at debug level.
+func (s serverLogger) Tracef(format string, v ...any) { s.l.Debug(fmt.Sprintf(format, v...)) }
+
+// TestServer is an embedded JetStream server for tests, stored in a temporary
+// directory, that can be stopped and started again on the same data to
+// simulate a broker outage. It implements nats.InProcessConnProvider by
+// forwarding to the current server, so a Bus opened with WithInProcess(ts)
+// reconnects to the restarted server on its own.
+type TestServer struct {
+	tb  testing.TB
+	dir string
+
+	mu  sync.Mutex
+	srv *server.Server
+}
+
+// ErrServerStopped is returned by TestServer.InProcessConn while the server is stopped.
+var ErrServerStopped = errors.New("natsjs: test server is stopped")
+
+// NewTestServer starts a TestServer in t.TempDir() and stops it at cleanup.
+func NewTestServer(tb testing.TB) *TestServer {
+	tb.Helper()
+	ts := &TestServer{tb: tb, dir: tb.TempDir()}
+	ts.Start()
+	tb.Cleanup(ts.Stop)
+	return ts
+}
+
+// Start starts the server on the stored data. It fails the test on error and
+// is a no-op while the server is running.
+func (ts *TestServer) Start() {
+	ts.tb.Helper()
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.srv != nil {
+		return
+	}
+	srv, err := StartEmbedded(Config{StoreDir: ts.dir}, nil)
+	if err != nil {
+		ts.tb.Fatalf("start test server: %v", err)
+	}
+	ts.srv = srv
+}
+
+// Stop shuts the server down and waits for it. Data stays on disk. No-op
+// while stopped.
+func (ts *TestServer) Stop() {
+	ts.mu.Lock()
+	srv := ts.srv
+	ts.srv = nil
+	ts.mu.Unlock()
+	if srv == nil {
+		return
+	}
+	srv.Shutdown()
+	srv.WaitForShutdown()
+}
+
+// Running reports whether the server is up.
+func (ts *TestServer) Running() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.srv != nil
+}
+
+// StoreDir is the data directory.
+func (ts *TestServer) StoreDir() string { return ts.dir }
+
+// InProcessConn implements nats.InProcessConnProvider against the current
+// server; it fails with ErrServerStopped while the server is stopped so a
+// client keeps retrying until Start.
+func (ts *TestServer) InProcessConn() (net.Conn, error) {
+	ts.mu.Lock()
+	srv := ts.srv
+	ts.mu.Unlock()
+	if srv == nil {
+		return nil, ErrServerStopped
+	}
+	return srv.InProcessConn()
+}
+
+// Config returns a driver configuration suited to tests on this server:
+// short nak delays so redelivery checks finish quickly, and a dedup window
+// short enough that a test never waits for it.
+func (ts *TestServer) Config() Config {
+	c := DefaultConfig()
+	c.StoreDir = ts.dir
+	c.Retention = time.Hour
+	c.DedupWindow = time.Minute
+	c.AckWait = 10 * time.Second
+	c.NakDelayMin = 50 * time.Millisecond
+	c.NakDelayMax = 500 * time.Millisecond
+	return c
+}
