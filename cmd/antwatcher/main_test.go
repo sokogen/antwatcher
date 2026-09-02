@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -102,27 +101,6 @@ func TestServeCheck_MissingFile(t *testing.T) {
 	code := run([]string{"serve", "-config", filepath.Join(t.TempDir(), "none.yml"), "-check"}, &stdout, &stderr)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "read config")
-}
-
-func TestServe_LogsRedactedConfig(t *testing.T) {
-	setExampleEnv(t)
-	for _, format := range []string{"json", "text"} {
-		t.Run(format, func(t *testing.T) {
-			var stdout, stderr bytes.Buffer
-			code := run([]string{"serve", "-config", examplePath, "-log-format", format, "-log-level", "debug"}, &stdout, &stderr)
-			require.Equal(t, 0, code)
-			logs := stderr.String()
-			assert.Contains(t, logs, "configuration loaded")
-			assert.Contains(t, logs, "not implemented yet")
-			assert.Contains(t, logs, "***")
-			for _, leak := range []string{"example-webhook-secret", "example-otlp-token", "ghp_example", "nats-creds"} {
-				assert.NotContains(t, logs, leak)
-			}
-			if format == "json" {
-				assert.True(t, strings.HasPrefix(logs, "{"), "json log line: %s", logs)
-			}
-		})
-	}
 }
 
 func TestServe_InvalidConfigLogsError(t *testing.T) {

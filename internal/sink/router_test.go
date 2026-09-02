@@ -534,6 +534,38 @@ func TestRouter_CleanStopOnContextCancel(t *testing.T) {
 	require.NoError(t, b.Close())
 }
 
+// TestRouter_CloseDoesNotCancelInFlightProcess pins the shutdown contract: a
+// Process call that honors its context still finishes and is acked when the
+// router closes underneath it, so a graceful stop never turns a slow but
+// healthy destination into a redelivery.
+func TestRouter_CloseDoesNotCancelInFlightProcess(t *testing.T) {
+	s := newCaptureSink("a", sink.ClassLog)
+	entered := make(chan struct{})
+	s.setProcess(func(ctx context.Context, _ event.Envelope) error {
+		close(entered)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+			return nil
+		}
+	})
+	b := gochannel.New(topic, nil)
+	m := metrics.New("v", "c")
+	r, err := sink.BuildRouter(context.Background(), b, routerCfg, bus.ModeDegrade, []sink.Instance{{Sink: s, StartFrom: bus.Earliest}}, m, nil)
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { done <- r.Run(context.Background()) }()
+	<-r.Running()
+	require.NoError(t, b.Publish(context.Background(), event.ToMessage(envelope(t, "g"))))
+	<-entered
+	require.NoError(t, r.Close())
+	require.NoError(t, <-done)
+	assert.InDelta(t, 1, testutil.ToFloat64(m.SinkEventsTotal.WithLabelValues("a", "log", metrics.SinkOK)), 0, "finished and acked")
+	assert.InDelta(t, 0, testutil.ToFloat64(m.SinkEventsTotal.WithLabelValues("a", "log", metrics.SinkError)), 0, "not aborted by the close")
+	require.NoError(t, b.Close())
+}
+
 func TestRouter_CloseWithoutRunReleasesConsumers(t *testing.T) {
 	b := gochannel.New(topic, nil)
 	r, err := sink.BuildRouter(context.Background(), b, routerCfg, bus.ModeDegrade, []sink.Instance{{Sink: newCaptureSink("a", sink.ClassLog), StartFrom: bus.Now}}, metrics.New("v", "c"), nil)

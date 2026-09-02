@@ -6,13 +6,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 
@@ -29,6 +32,18 @@ var (
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
+
+// Test seams. Production uses the process signals and the default registries;
+// tests replace them to run serve in-process with private drivers and to
+// observe the built service.
+var (
+	// serveBaseContext is the parent of the signal-aware root context.
+	serveBaseContext = context.Background
+	// serveOptionsFn provides the registries and build information.
+	serveOptionsFn = defaultServeOptions
+	// serveStarted, when set, receives the service right before run.
+	serveStarted func(*service)
+)
 
 const usageText = `usage: antwatcher <command> [flags]
 
@@ -85,11 +100,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// Bus and sink drivers register their Describers here in later tasks so
-	// -check can render and cross-validate their blocks.
-	describers := config.Describers{}
-
-	redacted, err := loadConfig(*configPath, describers)
+	opts := serveOptionsFn()
+	cfg, redacted, err := loadConfig(*configPath, opts.describers())
 	if err != nil {
 		if *check {
 			fmt.Fprintf(stderr, "configuration is invalid:\n%v\n", err)
@@ -112,30 +124,48 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	logger.Info("configuration loaded",
 		"config", *configPath,
-		"version", version,
+		"version", opts.version,
 		"bus_driver", redacted.Bus.Driver,
 		"sinks", len(redacted.Sinks),
 		"recovery_enabled", redacted.Recovery.Enabled,
 		"settings", redacted,
 	)
-	logger.Warn("serve is not implemented yet: the configuration was loaded and nothing was started")
+
+	ctx, stop := signal.NotifyContext(serveBaseContext(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	svc, err := newService(ctx, cfg, logger, opts)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	if serveStarted != nil {
+		serveStarted(svc)
+	}
+	if err := svc.run(ctx); err != nil {
+		return 1
+	}
 	return 0
 }
 
 // loadConfig loads, validates, and redacts the configuration at path. All
 // validation errors are returned together so an operator fixes them in one pass.
-func loadConfig(path string, describers config.Describers) (config.RedactedConfig, error) {
+func loadConfig(path string, describers config.Describers) (config.Config, config.RedactedConfig, error) {
 	cfg, err := config.Load(path)
 	if err != nil {
-		return config.RedactedConfig{}, err
+		return config.Config{}, config.RedactedConfig{}, err
 	}
 	if err := cfg.Validate(); err != nil {
-		return config.RedactedConfig{}, err
+		return config.Config{}, config.RedactedConfig{}, err
 	}
 	if err := config.ValidateDrivers(cfg, describers); err != nil {
-		return config.RedactedConfig{}, err
+		return config.Config{}, config.RedactedConfig{}, err
 	}
-	return config.Redacted(cfg, describers)
+	redacted, err := config.Redacted(cfg, describers)
+	if err != nil {
+		return config.Config{}, config.RedactedConfig{}, err
+	}
+	return cfg, redacted, nil
 }
 
 func newLogger(w io.Writer, level, format string) (*slog.Logger, error) {

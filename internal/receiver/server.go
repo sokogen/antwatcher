@@ -73,6 +73,19 @@ func (s *Server) Addr() net.Addr {
 	return s.listener.Addr()
 }
 
+// Close releases the bound listener at once, without the graceful shutdown
+// Run performs when its context ends: Serve then fails and Run returns its
+// error. It exists to simulate a listener failure; the normal stop path is
+// cancelling the context given to Run. No-op before Listen.
+func (s *Server) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Close()
+}
+
 // Run binds the address if needed and serves until ctx ends, then stops
 // accepting connections and waits for in-flight requests up to
 // publish_timeout plus a margin. It returns nil after a clean shutdown.

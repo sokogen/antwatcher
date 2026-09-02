@@ -249,7 +249,13 @@ func (h *handler) handle(msg *message.Message) error {
 		return h.stall(msg.UUID, Permanent(fmt.Errorf("decode message: %w", err)))
 	}
 
-	ctx, cancel := context.WithTimeout(msg.Context(), h.processTimeout)
+	// The process deadline is the only bound on a Process call. The message
+	// context is detached from cancellation on purpose: Watermill cancels it
+	// when the router closes, and an in-flight call must be allowed to
+	// finish within router.close_timeout (the broker validates ack wait
+	// against process_timeout, so the deadline still holds) instead of being
+	// aborted and redelivered after every restart.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(msg.Context()), h.processTimeout)
 	defer cancel()
 	start := h.now()
 	err = h.inst.Process(ctx, env)

@@ -112,3 +112,22 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 		t.Fatal("Run did not return")
 	}
 }
+
+func TestServer_CloseFailsRun(t *testing.T) {
+	cfg := testConfig()
+	cfg.Listen = "127.0.0.1:0"
+	s := NewServer(cfg, http.NotFoundHandler(), nil)
+	require.NoError(t, s.Close(), "Close before Listen is a no-op")
+	require.NoError(t, s.Listen())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(context.Background()) }()
+	time.Sleep(20 * time.Millisecond)
+	require.NoError(t, s.Close())
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "receiver: serve")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not return after Close")
+	}
+}
