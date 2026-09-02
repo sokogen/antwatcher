@@ -194,11 +194,11 @@ Key properties this plan implements:
 - ➕ Existing consumers: deliver policy and start sequence are kept, `ack_wait` and `max_deliver` are updated to the current configuration; the subscriber forwards a Nack as `NakWithDelay` with the exponential delay computed from the broker's delivery count, and `Close` waits up to 5s for in-flight acks/nacks before handing the rest back to the broker
 
 ### Task 6: Service metrics and admin server
-- [ ] `internal/metrics/metrics.go`: `Metrics` owning a `prometheus.Registry` with Go runtime and process collectors, `antwatcher_build_info{version,commit}`, and constructors for every metric family listed in Technical Details so components share instances
-- [ ] `internal/metrics/lag.go`: `LagPoller` polling `bus.LagReporter` for registered consumers every `admin.lag_interval` (default 15s) into `antwatcher_bus_consumer_lag{consumer}`; logs once and skips when the bus does not report lag
-- [ ] `internal/admin/server.go`: admin HTTP server on `admin.listen` (default `127.0.0.1:9090`): `/metrics`, `/healthz` (200), `/readyz` (from a `Readiness` func), `/status` (JSON from a `StatusProvider` func; filled in by Task 18); never mounted on the webhook listener
-- [ ] write tests: build info exposed; lag poller updates gauge from a fake reporter and tolerates errors; admin endpoints respond; readiness reflects the provider
-- [ ] run tests - must pass before next task
+- [x] `internal/metrics/metrics.go`: `Metrics` owning a `prometheus.Registry` with Go runtime and process collectors, `antwatcher_build_info{version,commit}`, and constructors for every metric family listed in Technical Details so components share instances
+- [x] `internal/metrics/lag.go`: `LagPoller` polling `bus.LagReporter` for registered consumers every `admin.lag_interval` (default 15s) into `antwatcher_bus_consumer_lag{consumer}`; logs once and skips when the bus does not report lag
+- [x] `internal/admin/server.go`: admin HTTP server on `admin.listen` (default `127.0.0.1:9090`): `/metrics`, `/healthz` (200), `/readyz` (from a `Readiness` func), `/status` (JSON from a `StatusProvider` func; filled in by Task 18); never mounted on the webhook listener
+- [x] write tests: build info exposed; lag poller updates gauge from a fake reporter and tolerates errors; admin endpoints respond; readiness reflects the provider
+- [x] run tests - must pass before next task
 
 ### Task 7: Webhook receiver
 - [ ] `internal/receiver/handler.go`: `New(cfg, b bus.Bus, topic, metrics, logger) http.Handler` mounting only `POST <webhook_path>` and `GET /healthz` (for load balancers); readiness lives on the admin server and depends on the bus only (sinks being down must not fail ingress)
