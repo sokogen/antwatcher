@@ -105,3 +105,19 @@ func TestSingleFlight_WaiterStopsAtItsOwnCtxDeadline(t *testing.T) {
 	assert.Less(t, elapsed, time.Second, "the waiter returns at its own deadline, not the in-flight attempt's")
 	close(release)
 }
+
+func TestSingleFlight_PanicInOpenDoesNotWedgeFutureCalls(t *testing.T) {
+	var f sink.SingleFlight[int]
+
+	require.PanicsWithValue(t, "boom", func() {
+		_, _ = f.Do(context.Background(), func(context.Context) (int, error) {
+			panic("boom")
+		})
+	})
+
+	v, err := f.Do(context.Background(), func(context.Context) (int, error) {
+		return 7, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 7, v, "a later call retries and succeeds instead of blocking forever")
+}

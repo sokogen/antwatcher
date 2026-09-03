@@ -270,16 +270,29 @@ func (s *Store) abandon(n int) {
 	s.f, s.size, s.openedAt, s.firstTS = nil, 0, time.Time{}, time.Time{}
 }
 
-// rotate closes the open file and finalizes it; an empty file is removed.
-// On failure the file stays in place and the next Append retries.
+// rotate closes the open file, cuts any trailing partial line left by a
+// write/fsync failure abandon could not itself repair (e.g. a failed
+// Truncate), and finalizes it; an empty file is removed. On failure the file
+// stays in place and the next Append retries.
 func (s *Store) rotate() error {
 	if s.f == nil {
 		return nil
 	}
-	f, size, firstTS := s.f, s.size, s.firstTS
+	f, firstTS := s.f, s.firstTS
 	s.f, s.size, s.openedAt, s.firstTS = nil, 0, time.Time{}, time.Time{}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", s.part, err)
+	}
+	info, err := os.Stat(s.part)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", s.part, err)
+	}
+	size, err := cutPartialLine(s.part, info.Size())
+	if err != nil {
+		return fmt.Errorf("repair %s: %w", s.part, err)
+	}
+	if size < info.Size() {
+		s.opts.Logger.Warn("archive: cut partial record before rotation", "path", s.part, "bytes", info.Size()-size)
 	}
 	if size == 0 {
 		if err := os.Remove(s.part); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -287,7 +300,7 @@ func (s *Store) rotate() error {
 		}
 		return nil
 	}
-	_, err := s.finalize(firstTS)
+	_, err = s.finalize(firstTS)
 	return err
 }
 

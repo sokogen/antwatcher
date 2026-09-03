@@ -52,15 +52,7 @@ func (f *SingleFlight[T]) Do(ctx context.Context, open func(context.Context) (T,
 		f.call = call
 		f.mu.Unlock()
 
-		v, err := open(ctx)
-
-		f.mu.Lock()
-		f.call = nil
-		if err == nil {
-			f.ready, f.value = true, v
-		}
-		f.mu.Unlock()
-		close(call.done)
+		v, err := f.attempt(ctx, call, open)
 
 		if err != nil {
 			var zero T
@@ -68,6 +60,31 @@ func (f *SingleFlight[T]) Do(ctx context.Context, open func(context.Context) (T,
 		}
 		return v, nil
 	}
+}
+
+// attempt runs open and always clears f.call and closes call.done afterward,
+// even if open panics, so a panicking attempt does not permanently wedge
+// every future Do call behind a done channel that never closes. A panic is
+// treated like a failed attempt (nothing cached) and re-raised once cleanup
+// is done.
+func (f *SingleFlight[T]) attempt(ctx context.Context, call *sfCall, open func(context.Context) (T, error)) (v T, err error) {
+	panicked := true
+	defer func() {
+		r := recover()
+		f.mu.Lock()
+		f.call = nil
+		if err == nil && !panicked {
+			f.ready, f.value = true, v
+		}
+		f.mu.Unlock()
+		close(call.done)
+		if r != nil {
+			panic(r)
+		}
+	}()
+	v, err = open(ctx)
+	panicked = false
+	return v, err
 }
 
 // Ready reports the cached value and whether Do has already produced one,

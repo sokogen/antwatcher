@@ -689,7 +689,11 @@ func TestHTTP_SuccessBodyVariants(t *testing.T) {
 		h := newHarness(t, httpConfig(srv.URL))
 		require.NoError(t, h.client.ExportSpans(t.Context(), sampleSpans()))
 	})
-	t.Run("undecodable protobuf body is retryable", func(t *testing.T) {
+	t.Run("undecodable protobuf body on 2xx is not retried", func(t *testing.T) {
+		// The status line already said 2xx: the destination accepted the
+		// batch. Only the PartialSuccess details were lost, not the
+		// acceptance, so this must not be retried - a retry would duplicate
+		// data the destination already has.
 		stub := &httpStub{respond: func(_ int, w http.ResponseWriter) {
 			w.Header().Set("Content-Type", "application/x-protobuf")
 			_, _ = w.Write([]byte{0xff, 0xff, 0xff})
@@ -699,9 +703,8 @@ func TestHTTP_SuccessBodyVariants(t *testing.T) {
 		cfg.Retry.Attempts = 0
 		h := newHarness(t, cfg)
 		err := h.client.ExportSpans(t.Context(), sampleSpans())
-		require.Error(t, err)
-		assert.False(t, sink.IsPermanent(err))
-		assert.Contains(t, err.Error(), "decode response")
+		require.NoError(t, err)
+		assert.Equal(t, 1, stub.count())
 	})
 }
 

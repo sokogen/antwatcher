@@ -107,6 +107,31 @@ func TestStore_ReopenedFileRotatesAtNextAppend(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
+// TestStore_RotateCutsPartialTrailingLine simulates bytes left on disk by a
+// write/fsync failure whose own abandon() truncate also failed (e.g. a
+// second disk fault) - a torn line written directly to the file, bypassing
+// Append/abandon entirely. rotate must cut that trailing partial line before
+// finalizing, not rely solely on OpenStore's startup recover, or the torn
+// line would be archived (and possibly gzip-compressed) permanently.
+func TestStore_RotateCutsPartialTrailingLine(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(StoreOptions{Dir: dir, Prefix: "raw"})
+	require.NoError(t, err)
+	require.NoError(t, s.Append(context.Background(), envelope(t)))
+
+	s.mu.Lock()
+	_, err = s.f.WriteString(`{"broken`) // no trailing newline: a torn line
+	require.NoError(t, err)
+	require.NoError(t, s.f.Sync())
+	s.mu.Unlock()
+
+	require.NoError(t, s.Close())
+
+	envs, err := ReadFile(filepath.Join(dir, "2026", "09", "02", "raw-20260902T100500Z-1.jsonl"))
+	require.NoError(t, err)
+	assert.Len(t, envs, 1, "the torn trailing line is cut, not archived")
+}
+
 func TestCutPartialLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f")
