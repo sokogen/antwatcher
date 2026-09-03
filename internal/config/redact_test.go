@@ -136,7 +136,7 @@ func TestMaskByKey_Patterns(t *testing.T) {
 	in := map[string]any{
 		"Token": "a", "client_secret": "b", "PASSWORD": "c", "passwd": "d", "authorization": "e",
 		"api_key": "f", "api-key": "g", "apikey": "h", "credentials": "i", "GITHUB_TOKEN": "j",
-		"endpoint": "keep", "tokens_per_second": 5,
+		"private_key": "k", "endpoint": "keep", "tokens_per_second": 5,
 	}
 	out := maskByKey(in).(map[string]any)
 	for k := range in {

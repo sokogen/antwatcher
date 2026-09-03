@@ -619,6 +619,36 @@ func TestHTTP_NonOKStatusIncludesBodyReadError(t *testing.T) {
 	assert.Contains(t, httpErr.Message, "response body:")
 }
 
+// TestHTTP_OKStatusWithBodyReadErrorIsNotRetried hijacks the connection
+// after a 2xx status so the client's body read fails. The status line
+// already said the destination accepted the batch, so this must not be
+// treated as a retryable failure: retrying would duplicate data the
+// destination already has.
+func TestHTTP_OKStatusWithBodyReadErrorIsNotRetried(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("short"))
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("ResponseWriter does not support hijacking")
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, httpConfig(srv.URL))
+	err := h.client.ExportSpans(t.Context(), sampleSpans())
+	assert.NoError(t, err)
+}
+
 func TestHTTP_PartialSuccess(t *testing.T) {
 	body, err := proto.Marshal(&coltracepb.ExportTraceServiceResponse{
 		PartialSuccess: &coltracepb.ExportTracePartialSuccess{RejectedSpans: 4, ErrorMessage: "too many attributes"},

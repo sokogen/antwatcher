@@ -432,7 +432,11 @@ func (t *httpTransport) post(ctx context.Context, url string, req, resp proto.Me
 		}
 	}
 	if readErr != nil {
-		return fmt.Errorf("read response: %w", readErr)
+		// The status line already said 2xx: the destination accepted the
+		// batch. Only the PartialSuccess details were lost, not the
+		// acceptance, so this is not retried as a failure - a retry would
+		// duplicate data the destination already has.
+		return nil
 	}
 	if len(data) > 0 && isProtobuf(httpResp.Header.Get("Content-Type")) {
 		if err := proto.Unmarshal(data, resp); err != nil {

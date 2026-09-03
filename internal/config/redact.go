@@ -9,7 +9,7 @@ import (
 
 // secretKeyPattern selects keys whose values are masked when a driver block has
 // no Describer. Described blocks rely on Secret fields instead.
-var secretKeyPattern = regexp.MustCompile(`(?i)(token|secret|password|passwd|authorization|api[-_]?key|credential)`)
+var secretKeyPattern = regexp.MustCompile(`(?i)(token|secret|password|passwd|authorization|key|credential)`)
 
 // RedactedConfig is the configuration as printed by `-check` and `/status`:
 // core fields typed (Secret masks itself), driver blocks rendered through their
