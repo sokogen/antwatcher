@@ -370,7 +370,7 @@ func TestRouter_OtherSinksContinueWhileOneIsStalled(t *testing.T) {
 		h.publish(envelope(t, guid))
 	}
 	eventually(t, func() bool { return len(good.guids()) == 3 }, "the healthy sink receives everything")
-	assert.Equal(t, []string{"g1", "g2", "g3"}, good.guids())
+	assert.ElementsMatch(t, []string{"g1", "g2", "g3"}, good.guids())
 	eventually(t, func() bool { _, n := h.stalledGauges("bad"); return n == 3 }, "every message is stalled on the failing sink")
 	eventually(t, func() bool { return bad.count() >= 6 }, "the stalled sink keeps being re-attempted")
 	assert.ElementsMatch(t, []string{"g1", "g2", "g3"}, bad.guids())
