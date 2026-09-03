@@ -262,6 +262,15 @@ func TestWriter_WriteErrorIsRetryable(t *testing.T) {
 	assert.Contains(t, err.Error(), "broken pipe")
 }
 
+func TestWriter_WriteHonoursContext(t *testing.T) {
+	var buf bytes.Buffer
+	w := stdout.NewWriter(&buf, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, w.Write(ctx, fixtureRecord(t, "ping")), context.Canceled)
+	assert.Empty(t, buf.String(), "nothing is written once ctx is already done")
+}
+
 func TestWriter_UnencodableRecordIsPermanent(t *testing.T) {
 	var buf bytes.Buffer
 	w := stdout.NewWriter(&buf, false)

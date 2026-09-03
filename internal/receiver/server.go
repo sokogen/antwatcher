@@ -26,8 +26,9 @@ type Server struct {
 // NewServer creates the webhook server for cfg.Listen without binding the
 // address. Timeouts are derived from the configuration: the write timeout
 // covers a full body read plus one publish_timeout, and the graceful shutdown
-// waits for in-flight publishes, which are bounded by the same timeout.
-// logger may be nil.
+// waits at least as long as that write timeout, so a slow-but-legitimate
+// in-flight request is not cut off before the server's own enforcement would
+// resolve it. logger may be nil.
 func NewServer(cfg config.Server, handler http.Handler, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
@@ -110,7 +111,7 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.PublishTimeout+2*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.http.WriteTimeout+2*time.Second)
 	defer cancel()
 	if err := s.http.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("receiver: shutdown: %w", err)

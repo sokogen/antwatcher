@@ -805,6 +805,34 @@ func TestServe_StartupFailure_PortInUse(t *testing.T) {
 	assert.Equal(t, []string{stageBusOpen, "close:events"}, store.snapshot(true), "what was built is closed")
 }
 
+func TestServe_StartupFailure_ReleasesAdminListener(t *testing.T) {
+	// admin.Listen binds first (server.go:180), then receiver.Listen fails
+	// because its address is already taken. closeBuilt must release the
+	// admin listener it already bound, or the port stays held.
+	adminLn, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	adminAddr := adminLn.Addr().String()
+	require.NoError(t, adminLn.Close())
+
+	taken, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer func() { _ = taken.Close() }()
+
+	cfg := parseConfig(t, strings.Replace(
+		strings.Replace(listeners, `"127.0.0.1:0"`, fmt.Sprintf("%q", adminAddr), 1),
+		`"localhost:0"`, fmt.Sprintf("%q", taken.Addr().String()), 1,
+	)+gochannelBus+oneLogSink)
+	store := newCaptureStore()
+	svc, err := newService(context.Background(), cfg, nil, store.options())
+	require.Error(t, err)
+	assert.Nil(t, svc)
+	assert.Contains(t, err.Error(), "receiver: listen")
+
+	again, err := net.Listen("tcp", adminAddr)
+	require.NoError(t, err, "admin listener must be released when a later startup stage fails")
+	require.NoError(t, again.Close())
+}
+
 func TestServe_DegradedDestinationsDoNotFailStartup(t *testing.T) {
 	// A GitHub API that fails every call.
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

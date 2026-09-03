@@ -218,6 +218,9 @@ func (s *service) closeBuilt() {
 	if s.bus != nil {
 		_ = s.bus.Close()
 	}
+	if s.admin != nil {
+		_ = s.admin.Close()
+	}
 }
 
 func (s *service) stage(name string) {

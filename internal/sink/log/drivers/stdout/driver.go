@@ -160,7 +160,13 @@ func formatTime(t time.Time) string {
 // Write implements log.Writer. The document and its trailing newline go out
 // in one call, and any error is retryable: a stream that cannot be written
 // right now (a full pipe, a closed collector) may accept the record later.
-func (w *Writer) Write(_ context.Context, rec otlp.LogRecord) error {
+// The write itself is a blocking OS call and cannot be interrupted mid-flight
+// by ctx (same limitation as the archive driver's disk writes); only a
+// context already done before the write starts is honored.
+func (w *Writer) Write(ctx context.Context, rec otlp.LogRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var (
 		data []byte
 		err  error

@@ -113,6 +113,61 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 	}
 }
 
+// TestServer_ShutdownWaitsForSlowInFlightRequest pins the regression this
+// budget change fixes: the shutdown context must give an in-flight request
+// at least as long as the server's own WriteTimeout, not just
+// PublishTimeout+2s. The handler sleeps longer than the old budget
+// (PublishTimeout+2s = 2.2s here) but well under the new one
+// (WriteTimeout+2s, tens of seconds), so a regression back to the old
+// formula would make this test fail with a shutdown error.
+func TestServer_ShutdownWaitsForSlowInFlightRequest(t *testing.T) {
+	cfg := testConfig()
+	cfg.Listen = "127.0.0.1:0"
+
+	started := make(chan struct{})
+	slow := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		time.Sleep(3 * time.Second)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := NewServer(cfg, slow, nil)
+	require.NoError(t, srv.Listen())
+	addr := srv.Addr()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- srv.Run(ctx) }()
+
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	respDone := make(chan result, 1)
+	go func() {
+		resp, err := http.Get("http://" + addr.String()) //nolint:gosec // test URL
+		respDone <- result{resp, err}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never started")
+	}
+	cancel() // begin shutdown while the slow request is in flight
+
+	select {
+	case err := <-runDone:
+		require.NoError(t, err, "shutdown must wait for the in-flight request under the enlarged budget")
+	case <-time.After(6 * time.Second):
+		t.Fatal("Run did not return after ctx cancel")
+	}
+
+	res := <-respDone
+	require.NoError(t, res.err)
+	assert.Equal(t, http.StatusOK, res.resp.StatusCode, "the slow request completed instead of being cut off")
+	_ = res.resp.Body.Close()
+}
+
 func TestServer_CloseFailsRun(t *testing.T) {
 	cfg := testConfig()
 	cfg.Listen = "127.0.0.1:0"
