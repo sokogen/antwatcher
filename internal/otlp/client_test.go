@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -583,6 +585,40 @@ func TestHTTP_PermanentStatuses(t *testing.T) {
 	}
 }
 
+// TestHTTP_NonOKStatusIncludesBodyReadError hijacks the connection after a
+// non-2xx status so the client's body read fails, and checks the resulting
+// HTTPError surfaces that read failure instead of silently building its
+// message from whatever partial bytes were read.
+func TestHTTP_NonOKStatusIncludesBodyReadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("short"))
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("ResponseWriter does not support hijacking")
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	h := newHarness(t, httpConfig(srv.URL))
+	err := h.client.ExportSpans(t.Context(), sampleSpans())
+	require.Error(t, err)
+	assert.False(t, sink.IsPermanent(err))
+	var httpErr *HTTPError
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusServiceUnavailable, httpErr.StatusCode)
+	assert.Contains(t, httpErr.Message, "response body:")
+}
+
 func TestHTTP_PartialSuccess(t *testing.T) {
 	body, err := proto.Marshal(&coltracepb.ExportTraceServiceResponse{
 		PartialSuccess: &coltracepb.ExportTracePartialSuccess{RejectedSpans: 4, ErrorMessage: "too many attributes"},
@@ -692,6 +728,33 @@ func TestHTTP_TimeoutIsRetryable(t *testing.T) {
 	assert.False(t, sink.IsPermanent(err))
 	assert.True(t, errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "deadline"), "%v", err)
 	assert.Equal(t, 2, stub.count())
+}
+
+// roundTripperFunc adapts a function to http.RoundTripper, for a fake
+// http.DefaultTransport that is not a *http.Transport.
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestNewHTTPTransport_FallsBackWhenDefaultTransportIsReplaced simulates
+// another package in the process replacing the global http.DefaultTransport
+// with something other than *http.Transport (common with instrumentation or
+// proxy libraries): the OTLP/HTTP transport must fall back to a fresh
+// *http.Transport instead of panicking on the type assertion.
+func TestNewHTTPTransport_FallsBackWhenDefaultTransportIsReplaced(t *testing.T) {
+	orig := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("not used")
+	})
+	t.Cleanup(func() { http.DefaultTransport = orig })
+
+	tgt := target{hostPort: "example.com:4318", tls: true}
+	require.NotPanics(t, func() {
+		tr := newHTTPTransport(DefaultConfig(), tgt, nil, "antwatcher-test")
+		require.NotNil(t, tr)
+		_, ok := tr.client.Transport.(*http.Transport)
+		assert.True(t, ok, "falls back to a fresh *http.Transport")
+	})
 }
 
 func TestSleepCtx(t *testing.T) {

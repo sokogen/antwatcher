@@ -197,17 +197,27 @@ type fakeOpener struct {
 	err   error
 	opens int
 	descs []*descriptorpb.DescriptorProto
+	block chan struct{} // when set, open waits for this or ctx before returning
 }
 
-func (o *fakeOpener) open(_ context.Context, desc *descriptorpb.DescriptorProto) (bqdriver.Appender, error) {
+func (o *fakeOpener) open(ctx context.Context, desc *descriptorpb.DescriptorProto) (bqdriver.Appender, error) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.opens++
 	o.descs = append(o.descs, desc)
-	if o.err != nil {
-		return nil, o.err
+	err, block, app := o.err, o.block, o.app
+	o.mu.Unlock()
+
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	return o.app, nil
+	if err != nil {
+		return nil, err
+	}
+	return app, nil
 }
 
 func (o *fakeOpener) openCount() int {

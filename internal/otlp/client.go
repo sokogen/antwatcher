@@ -346,7 +346,12 @@ func newHTTPTransport(cfg Config, tgt target, tlsCfg *tls.Config, userAgent stri
 	for k, v := range cfg.Headers {
 		headers[k] = v.Reveal()
 	}
-	rt := http.DefaultTransport.(*http.Transport).Clone()
+	rt, ok := http.DefaultTransport.(*http.Transport)
+	if ok {
+		rt = rt.Clone()
+	} else {
+		rt = &http.Transport{}
+	}
 	rt.TLSClientConfig = tlsCfg
 	return &httpTransport{
 		client:    &http.Client{Transport: rt},
@@ -416,9 +421,13 @@ func (t *httpTransport) post(ctx context.Context, url string, req, resp proto.Me
 	data, readErr := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBytes))
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode > 299 {
+		msg := errorMessage(httpResp.Header.Get("Content-Type"), data)
+		if readErr != nil {
+			msg = strings.TrimSpace(msg + "; response body: " + readErr.Error())
+		}
 		return &HTTPError{
 			StatusCode: httpResp.StatusCode,
-			Message:    errorMessage(httpResp.Header.Get("Content-Type"), data),
+			Message:    msg,
 			RetryAfter: parseRetryAfter(httpResp.Header.Get("Retry-After"), time.Now()),
 		}
 	}

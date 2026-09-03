@@ -57,8 +57,9 @@ type Writer struct {
 	mu     sync.Mutex
 	schema analytics.Schema
 	desc   *RowDescriptor
-	stream Appender
 	closed bool
+
+	stream sink.SingleFlight[Appender]
 
 	closers []func() error
 	cancel  context.CancelFunc
@@ -171,46 +172,66 @@ func (w *Writer) Write(ctx context.Context, records []analytics.Record) error {
 
 // streamFor returns the open stream and descriptor, opening the stream on
 // the first call. An opener failure is classified and retried on the next
-// write.
+// write. The open itself runs outside w.mu: a concurrent caller waits for it
+// through stream's SingleFlight instead of blocking past its own ctx.
 func (w *Writer) streamFor(ctx context.Context) (Appender, *RowDescriptor, error) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
+		w.mu.Unlock()
 		return nil, nil, sink.Permanent(errors.New("bigquery writer is closed"))
 	}
 	if w.desc == nil {
 		desc, err := NewRowDescriptor(w.schema)
 		if err != nil {
+			w.mu.Unlock()
 			return nil, nil, sink.Permanent(fmt.Errorf("row descriptor: %w", err))
 		}
 		w.desc = desc
 	}
-	if w.stream == nil {
-		stream, err := w.open(ctx, w.desc.Proto)
+	desc := w.desc
+	w.mu.Unlock()
+
+	stream, err := w.stream.Do(ctx, func(ctx context.Context) (Appender, error) {
+		s, err := w.open(ctx, desc.Proto)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open write stream to %s: %w", w.cfg.TableID(), classify(err))
+			return nil, err
 		}
-		w.stream = stream
+		w.mu.Lock()
+		closed := w.closed
+		w.mu.Unlock()
+		if closed {
+			_ = s.Close()
+			return nil, sink.Permanent(errors.New("bigquery writer is closed"))
+		}
 		w.logger.Info("bigquery: write stream opened")
+		return s, nil
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("open write stream to %s: %w", w.cfg.TableID(), classify(err))
 	}
-	return w.stream, w.desc, nil
+	return stream, desc, nil
 }
 
 // Close implements analytics.Writer: it closes the stream and the clients.
 // Later writes fail permanently.
 func (w *Writer) Close() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closed {
+		w.mu.Unlock()
 		return nil
 	}
 	w.closed = true
+	w.mu.Unlock()
+
+	// Peek waits out a stream open still in flight (started by a Write just
+	// before the router stopped delivering) instead of racing it: the open's
+	// own closure already self-closes the stream if it finishes after closed
+	// is set, so at most one of the two ever closes it.
 	var errs []error
-	if w.stream != nil {
-		if err := w.stream.Close(); err != nil {
+	if stream, ok := w.stream.Peek(context.Background()); ok {
+		if err := stream.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close write stream: %w", err))
 		}
-		w.stream = nil
 	}
 	for _, c := range w.closers {
 		if err := c(); err != nil {

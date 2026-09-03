@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	bq "cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/assert"
@@ -275,6 +276,58 @@ func TestWrite_ConcurrentFirstWritesShareOneStream(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, 1, opener.openCount())
 	assert.Len(t, app.batchList(), 8)
+}
+
+func TestWrite_WaiterRespectsOwnCtxWhileAnotherOpens(t *testing.T) {
+	app := &fakeAppender{}
+	opener := &fakeOpener{app: app, block: make(chan struct{})}
+	w := bqdriver.NewWriter(validConfig(), newFakeTables(), opener.open, nil)
+	recs := fixtureRecords(t, "workflow_job.completed")
+
+	firstStarted := make(chan struct{})
+	go func() {
+		close(firstStarted)
+		_ = w.Write(context.Background(), recs)
+	}()
+	<-firstStarted
+	time.Sleep(5 * time.Millisecond) // let the first Write reach the fake opener's block
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := w.Write(ctx, recs)
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, time.Second, "a concurrent stream open in flight must not block a caller past its own ctx")
+	close(opener.block)
+}
+
+func TestClose_WaitsOutStreamOpenInFlightAndClosesItExactlyOnce(t *testing.T) {
+	app := &fakeAppender{}
+	opener := &fakeOpener{app: app, block: make(chan struct{})}
+	w := bqdriver.NewWriter(validConfig(), newFakeTables(), opener.open, nil)
+	recs := fixtureRecords(t, "workflow_job.completed")
+
+	writeStarted := make(chan struct{})
+	writeDone := make(chan error, 1)
+	go func() {
+		close(writeStarted)
+		writeDone <- w.Write(context.Background(), recs)
+	}()
+	<-writeStarted
+	time.Sleep(5 * time.Millisecond) // let Write reach the fake opener's block
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- w.Close()
+	}()
+	time.Sleep(5 * time.Millisecond) // let Close start waiting on the in-flight open
+	close(opener.block)
+
+	require.NoError(t, <-closeDone)
+	<-writeDone // either it opened before Close observed it, or the open self-closed once it saw closed
+	assert.Equal(t, 1, app.closed, "the stream opened concurrently with Close is closed exactly once, never leaked")
 }
 
 func TestClose_ReportsStreamAndClientErrors(t *testing.T) {

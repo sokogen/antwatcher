@@ -29,6 +29,7 @@ type fakeWriter struct {
 	closeErr  error
 	closed    int
 	lastCtx   context.Context
+	block     chan struct{} // when set, EnsureSchema waits for this or ctx instead of sleeping
 }
 
 func (f *fakeWriter) EnsureSchema(ctx context.Context, schema analytics.Schema) error {
@@ -40,10 +41,21 @@ func (f *fakeWriter) EnsureSchema(ctx context.Context, schema analytics.Schema) 
 	}
 	f.ensured = append(f.ensured, schema)
 	f.lastCtx = ctx
-	err := f.ensureErr
+	err, block := f.ensureErr, f.block
 	f.mu.Unlock()
 
-	time.Sleep(2 * time.Millisecond) // give concurrent callers a chance to overlap
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			f.mu.Lock()
+			f.inEnsure--
+			f.mu.Unlock()
+			return ctx.Err()
+		}
+	} else {
+		time.Sleep(2 * time.Millisecond) // give concurrent callers a chance to overlap
+	}
 
 	f.mu.Lock()
 	f.inEnsure--
@@ -221,6 +233,30 @@ func TestSink_EnsureSchemaRunsOnceUnderConcurrency(t *testing.T) {
 	assert.Equal(t, 1, ensures, "concurrent first calls share one EnsureSchema")
 	assert.Equal(t, 1, w.maxEnsure, "never overlapping")
 	assert.Equal(t, n, writes)
+}
+
+func TestSink_EnsureSchemaWaiterRespectsOwnCtxWhileAnotherRuns(t *testing.T) {
+	w := &fakeWriter{block: make(chan struct{})}
+	s := analytics.New("bq", w, true)
+	env := fixtureEnvelope(t, "workflow_run.completed")
+
+	firstStarted := make(chan struct{})
+	go func() {
+		close(firstStarted)
+		_ = s.Process(context.Background(), env)
+	}()
+	<-firstStarted
+	time.Sleep(5 * time.Millisecond) // let the first Process reach the fake writer's block
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := s.Process(ctx, env)
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, time.Second, "a concurrent EnsureSchema in flight must not block a caller past its own ctx")
+	close(w.block)
 }
 
 func TestSink_ProcessPropagatesWriterErrors(t *testing.T) {

@@ -102,6 +102,7 @@ type fakeDriver struct {
 	bus   *fakeBus
 	fail  atomic.Int32 // remaining opens that fail
 	opens atomic.Int32
+	block chan struct{} // when set, open waits for this or ctx before proceeding
 }
 
 type fakeConfig struct {
@@ -124,9 +125,16 @@ func describeFake(raw yaml.Node) (any, error) {
 	return c, nil
 }
 
-func (d *fakeDriver) open(_ context.Context, raw yaml.Node, topic string, _ *slog.Logger, _ prometheus.Registerer) (bus.Bus, error) {
+func (d *fakeDriver) open(ctx context.Context, raw yaml.Node, topic string, _ *slog.Logger, _ prometheus.Registerer) (bus.Bus, error) {
 	if _, err := describeFake(raw); err != nil {
 		return nil, err
+	}
+	if d.block != nil {
+		select {
+		case <-d.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	d.opens.Add(1)
 	if d.fail.Add(-1) >= 0 {
@@ -449,6 +457,30 @@ func TestPublisher_CloseBeforeOpenAndConcurrentOpen(t *testing.T) {
 	assert.Equal(t, int32(1), d.opens.Load(), "concurrent publishes share one open")
 	assert.Len(t, d.bus.published(), 8)
 	require.NoError(t, p.Close())
+}
+
+func TestPublisher_WaiterRespectsOwnCtxWhileAnotherOpens(t *testing.T) {
+	reg, d := fakeRegistry(t, 0)
+	d.block = make(chan struct{})
+	p := fwdbus.NewPublisher(reg, config.Bus{Driver: "fake", Topic: "out"}, nil)
+
+	openStarted := make(chan struct{})
+	go func() {
+		close(openStarted)
+		_ = p.Publish(context.Background(), message.NewMessage("slow", []byte("{}")))
+	}()
+	<-openStarted
+	time.Sleep(5 * time.Millisecond) // let the first Publish reach the fake driver's block
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := p.Publish(ctx, message.NewMessage("waiter", []byte("{}")))
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, time.Second, "a concurrent open in flight must not block a caller past its own ctx")
+	close(d.block)
 }
 
 func TestPublisher_NonDurableTargetWarns(t *testing.T) {

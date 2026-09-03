@@ -3,7 +3,6 @@ package analytics
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/sokogen/antwatcher/internal/event"
 	"github.com/sokogen/antwatcher/internal/model"
@@ -38,8 +37,7 @@ type Sink struct {
 	writer Writer
 	ensure bool
 
-	mu      sync.Mutex
-	ensured bool
+	ensured sink.SingleFlight[struct{}]
 }
 
 // New builds the analytics sink named name on top of writer. When ensure is
@@ -89,21 +87,18 @@ func (s *Sink) Process(ctx context.Context, env event.Envelope) error {
 }
 
 // ensureSchema runs EnsureSchema once, serialising concurrent first calls so
-// the writer sees a single attempt at a time.
+// the writer sees a single attempt at a time. Waiters behind an in-flight
+// attempt honor their own ctx instead of blocking on it: Process must return
+// within router.process_timeout regardless of how long another goroutine's
+// EnsureSchema call takes.
 func (s *Sink) ensureSchema(ctx context.Context) error {
 	if !s.ensure {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.ensured {
-		return nil
-	}
-	if err := s.writer.EnsureSchema(ctx, Current); err != nil {
-		return err
-	}
-	s.ensured = true
-	return nil
+	_, err := s.ensured.Do(ctx, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, s.writer.EnsureSchema(ctx, Current)
+	})
+	return err
 }
 
 // Close implements sink.Sink by closing the writer.

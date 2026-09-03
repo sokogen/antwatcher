@@ -62,6 +62,30 @@ func TestStore_WriteFailureIsRetryableAndCut(t *testing.T) {
 	assert.Len(t, envs, 2)
 }
 
+// TestStore_CloseFinalizeFailureIsStickyOnRetry closes the underlying file
+// out from under the store so Close's own finalize fails, then checks that a
+// second Close call reports the same failure instead of silently returning
+// nil (rotate has already dropped the file from the store's state by then,
+// so there is nothing left to actually retry).
+func TestStore_CloseFinalizeFailureIsStickyOnRetry(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(StoreOptions{Dir: dir, Prefix: "raw"})
+	require.NoError(t, err)
+	require.NoError(t, s.Append(context.Background(), envelope(t)))
+
+	s.mu.Lock()
+	require.NoError(t, s.f.Close()) // force the file Close inside rotate to fail
+	s.mu.Unlock()
+
+	err1 := s.Close()
+	require.Error(t, err1)
+	assert.Contains(t, err1.Error(), "finalize archive")
+
+	err2 := s.Close()
+	require.Error(t, err2, "a retried Close must not silently report success")
+	assert.Equal(t, err1.Error(), err2.Error(), "the same failure is returned again")
+}
+
 func TestStore_ReopenedFileRotatesAtNextAppend(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)

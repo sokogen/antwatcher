@@ -107,6 +107,7 @@ type Store struct {
 	firstTS  time.Time // received_at of the first record in f
 	seq      int
 	closed   bool
+	closeErr error
 }
 
 // OpenStore validates opts, creates the directory, recovers files left by a
@@ -202,18 +203,21 @@ func (s *Store) Append(ctx context.Context, env event.Envelope) error {
 }
 
 // Close implements Writer: the open file is finalized. Closing twice is a
-// no-op.
+// no-op that returns the same result as the first call: a finalize failure
+// is sticky (rotate has already dropped the in-memory file state by the time
+// it fails, so there is nothing left here to retry; the leftover file is
+// picked up by the next OpenStore's recover instead).
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil
+		return s.closeErr
 	}
 	s.closed = true
 	if err := s.rotate(); err != nil {
-		return fmt.Errorf("finalize archive: %w", err)
+		s.closeErr = fmt.Errorf("finalize archive: %w", err)
 	}
-	return nil
+	return s.closeErr
 }
 
 // shouldRotate reports whether the open file must be finalized before

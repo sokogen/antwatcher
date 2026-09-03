@@ -295,8 +295,9 @@ type Publisher struct {
 	logger   *slog.Logger
 
 	mu     sync.Mutex
-	bus    bus.Bus
 	closed bool
+
+	bus sink.SingleFlight[bus.Bus]
 }
 
 // NewPublisher returns a Publisher that opens target through registry on the
@@ -325,50 +326,68 @@ func (p *Publisher) Publish(ctx context.Context, msg *message.Message) error {
 // Opened reports whether the target bus is currently open.
 func (p *Publisher) Opened() bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.bus != nil
+	closed := p.closed
+	p.mu.Unlock()
+	if closed {
+		return false
+	}
+	_, ok := p.bus.Ready()
+	return ok
 }
 
-// open returns the target bus, opening it under the lock so concurrent
-// Process calls share one connection. The target bus registers no metrics:
-// its collectors would collide with the ingress bus's on the shared
-// registry, and the forward sink's own metrics already cover its health.
+// open returns the target bus, opening it on the first call. The open runs
+// outside p.mu: concurrent Process calls share one connection through the
+// SingleFlight instead of blocking one another past their own ctx while it
+// is established. The target bus registers no metrics: its collectors would
+// collide with the ingress bus's on the shared registry, and the forward
+// sink's own metrics already cover its health.
 func (p *Publisher) open(ctx context.Context) (bus.Bus, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
+	closed := p.closed
+	p.mu.Unlock()
+	if closed {
 		return nil, bus.ErrClosed
 	}
-	if p.bus != nil {
-		return p.bus, nil
-	}
-	b, err := p.registry.Open(ctx, p.target, p.logger, nil)
-	if err != nil {
-		return nil, fmt.Errorf("open target bus: %w", err)
-	}
-	caps := b.Capabilities()
-	if !caps.DurablePublish {
-		p.logger.Warn("forward target is not durable: a copy acked here can be lost by the target", "driver", p.target.Driver, "topic", p.target.Topic)
-	}
-	p.logger.Info("forward target opened", "driver", p.target.Driver, "topic", p.target.Topic, "capabilities", caps.String())
-	p.bus = b
-	return b, nil
+	return p.bus.Do(ctx, func(ctx context.Context) (bus.Bus, error) {
+		b, err := p.registry.Open(ctx, p.target, p.logger, nil)
+		if err != nil {
+			return nil, fmt.Errorf("open target bus: %w", err)
+		}
+		p.mu.Lock()
+		closed := p.closed
+		p.mu.Unlock()
+		if closed {
+			_ = b.Close()
+			return nil, bus.ErrClosed
+		}
+		caps := b.Capabilities()
+		if !caps.DurablePublish {
+			p.logger.Warn("forward target is not durable: a copy acked here can be lost by the target", "driver", p.target.Driver, "topic", p.target.Topic)
+		}
+		p.logger.Info("forward target opened", "driver", p.target.Driver, "topic", p.target.Topic, "capabilities", caps.String())
+		return b, nil
+	})
 }
 
 // Close implements forward.Publisher: it closes the target bus when it was
-// opened. Idempotent; a later Publish fails with bus.ErrClosed.
+// opened. Idempotent; a later Publish fails with bus.ErrClosed. Peek waits
+// out an open still in flight (started just before the router stopped
+// delivering) instead of racing it: the open's own closure already
+// self-closes the bus if it finishes after closed is set, so at most one of
+// the two ever closes it.
 func (p *Publisher) Close() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		return nil
 	}
 	p.closed = true
-	if p.bus == nil {
+	p.mu.Unlock()
+
+	b, ok := p.bus.Peek(context.Background())
+	if !ok {
 		return nil
 	}
-	b := p.bus
-	p.bus = nil
 	if err := b.Close(); err != nil {
 		return fmt.Errorf("close target bus: %w", err)
 	}

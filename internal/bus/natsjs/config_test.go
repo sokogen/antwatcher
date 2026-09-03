@@ -1,10 +1,12 @@
 package natsjs
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nats-io/nkeys"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -99,4 +101,20 @@ func TestCredentialsOption(t *testing.T) {
 	_, err = credentialsOption("-----BEGIN NATS USER JWT-----\ngarbage\n------END NATS USER JWT------\n")
 	require.Error(t, err, "decorated content without a valid JWT and seed")
 	assert.Contains(t, err.Error(), "credentials")
+}
+
+func TestCredentialsOption_DecoratedJWTAndSeed(t *testing.T) {
+	kp, err := nkeys.CreateUser()
+	require.NoError(t, err)
+	seed, err := kp.Seed()
+	require.NoError(t, err)
+
+	creds := fmt.Sprintf(
+		"-----BEGIN NATS USER JWT-----\n%s\n------END NATS USER JWT------\n\n"+
+			"-----BEGIN USER NKEY SEED-----\n%s\n------END USER NKEY SEED------\n",
+		"eyJhbGciOiJlZDI1NTE5In0.eyJzdWIiOiJ0ZXN0In0.fake-signature", seed)
+
+	opt, err := credentialsOption(creds)
+	require.NoError(t, err, "a real decorated JWT and NKey seed parse end to end")
+	assert.NotNil(t, opt, "produces a nats.UserJWTAndSeed option")
 }
