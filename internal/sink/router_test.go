@@ -204,6 +204,15 @@ func (h *harness) stalledGauges(name string) (stalled, count float64) {
 	return testutil.ToFloat64(h.m.SinkStalled.WithLabelValues(name)), testutil.ToFloat64(h.m.SinkStalledMessages.WithLabelValues(name))
 }
 
+func (h *harness) stalledAttempts(name string) int {
+	for _, st := range h.router.Status() {
+		if st.Name == name && len(st.Stalled) == 1 {
+			return st.Stalled[0].Attempts
+		}
+	}
+	return 0
+}
+
 func (h *harness) status(name string) sink.SinkStatus {
 	h.t.Helper()
 	for _, st := range h.router.Status() {
@@ -297,7 +306,7 @@ func TestRouter_PermanentErrorStallsAndClearsOnSuccess(t *testing.T) {
 
 	started := time.Now()
 	h.publish(envelope(t, "guid-1"))
-	eventually(t, func() bool { return s.count() >= 5 }, "re-attempted at the bus's pace")
+	eventually(t, func() bool { return h.stalledAttempts("a") >= 5 }, "re-attempted at the bus's pace")
 	assert.Less(t, time.Since(started), 3*time.Second, "the handler adds no delay of its own before the Nack")
 
 	stalled, count := h.stalledGauges("a")
