@@ -216,15 +216,24 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 7: Rename the run span prefix
 
-- [ ] rename `PrefixWorkflow` to `PrefixRun` with value `run:` in
+- [x] rename `PrefixWorkflow` to `PrefixRun` with value `run:` in
       `internal/sink/trace/project.go:27`
-- [ ] update the doc comment on `Project` (`project.go:63-66`) which spells the
+- [x] update the doc comment on `Project` (`project.go:63-66`) which spells the
       old name out
-- [ ] leave `job:` and `step:` unchanged, leave every attribute on `github.*`,
+- [x] leave `job:` and `step:` unchanged, leave every attribute on `github.*`,
       and do not add `antwatcher.kind` — this task is the prefix only
-- [ ] update trace projection tests asserting the old prefix
-- [ ] grep README and `docs/` for `workflow:` used as a span name and update
-- [ ] run tests - must pass before next task
+- [x] update trace projection tests asserting the old prefix
+- [x] grep README and `docs/` for `workflow:` used as a span name and update
+- [x] run tests - must pass before next task
+- ➕ no literal `workflow:` span name appears in README or `docs/`; the two
+  places that *name* the top-level span in prose now say "run span" instead of
+  "workflow span" (`README.md` driver matrix, ADR 0003 class table). The
+  generated config block was left alone: it describes GitHub's hierarchy
+  ("one span tree per workflow run"), not a span name, and `make readme`
+  reports no drift.
+- ➕ `internal/otlp/types_test.go` used `"workflow:ci"` as a fixture span name.
+  It is unrelated to the trace class constant, but it was renamed to `"run:ci"`
+  so a grep for the old prefix comes back empty.
 
 ### Task 8: Compose passes the version through
 

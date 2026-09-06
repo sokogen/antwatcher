@@ -33,7 +33,7 @@ func TestResourceSpans(t *testing.T) {
 	res := DefaultResource("1.2.3")
 	spans := []Span{
 		{
-			TraceID: testTraceID, SpanID: testParent, Name: "workflow:ci", Kind: SpanKindServer,
+			TraceID: testTraceID, SpanID: testParent, Name: "run:ci", Kind: SpanKindServer,
 			Start: testStart, End: testEnd,
 			Attributes: map[string]any{"github.run_id": int64(42), "github.repository": "o/r", "github.conclusion": "success"},
 			Status:     Status{Code: StatusOk},
@@ -53,7 +53,7 @@ func TestResourceSpans(t *testing.T) {
 			Spans: []*tracepb.Span{
 				{
 					TraceId: testTraceID[:], SpanId: testParent[:], ParentSpanId: nil,
-					Name: "workflow:ci", Kind: tracepb.Span_SPAN_KIND_SERVER,
+					Name: "run:ci", Kind: tracepb.Span_SPAN_KIND_SERVER,
 					StartTimeUnixNano: 1788343200123456789, EndTimeUnixNano: 1788343290123456789,
 					Attributes: []*commonpb.KeyValue{
 						kv("github.conclusion", str("success")),

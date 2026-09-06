@@ -26,7 +26,7 @@ func TestProject_CompletedRunIsRootSpan(t *testing.T) {
 	want := otlp.Span{
 		TraceID: model.TraceID(repoID, runID, 1),
 		SpanID:  model.RunSpanID(runID, 1),
-		Name:    "workflow:CI",
+		Name:    "run:CI",
 		Kind:    otlp.SpanKindInternal,
 		Start:   ts(10, 0, 0),
 		End:     ts(10, 3, 20),
@@ -220,7 +220,7 @@ func TestProject_RunFallbacks(t *testing.T) {
 	spans, err := trace.Project(exec)
 	require.NoError(t, err)
 	got := spans[0]
-	assert.Equal(t, "workflow:.github/workflows/ci.yml", got.Name, "path names the span when the workflow has no name")
+	assert.Equal(t, "run:.github/workflows/ci.yml", got.Name, "path names the span when the workflow has no name")
 	assert.Equal(t, exec.Run.CreatedAt, got.Start, "created_at stands in for a missing run_started_at")
 	assert.NotContains(t, got.Attributes, trace.AttrWorkflowName)
 	assert.NotContains(t, got.Attributes, trace.AttrHeadBranch)

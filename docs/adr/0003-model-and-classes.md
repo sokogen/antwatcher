@@ -42,7 +42,7 @@ and only move bytes.
 
 | Class | Projection | Driver contract | Drivers |
 |---|---|---|---|
-| `trace` | completed run → workflow span; completed job → job span + step spans; earlier states → `ErrSkipped` | `Exporter{ExportSpans(ctx, []otlp.Span); Close()}` | `otlp` |
+| `trace` | completed run → run span; completed job → job span + step spans; earlier states → `ErrSkipped` | `Exporter{ExportSpans(ctx, []otlp.Span); Close()}` | `otlp` |
 | `log` | every event → one OTLP `LogRecord` with envelope attributes and, for runs and jobs, the trace and span IDs | `Writer{Write(ctx, otlp.LogRecord); Close()}` | `stdout`, `otlp` |
 | `analytics` | run, job, and step `Record`s with `record_id`, `status_rank`, `event_time`; a portable `Schema`; `CurrentViewSQL` | `Writer{EnsureSchema(ctx, Schema); Write(ctx, []Record); Close()}` | `bigquery` |
 | `archive` | the raw envelope as one JSON document (envelope fields plus nested payload) | `Writer{Append(ctx, event.Envelope); Close()}` | `filesystem` |

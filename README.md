@@ -369,7 +369,7 @@ permanent, and no driver constructor touches the network.
 
 | Class | What it emits | Driver | Destination | Notes |
 |---|---|---|---|---|
-| `trace` | One span tree per workflow run: workflow span, job spans, step spans. Only completed runs and jobs produce spans; earlier states are skipped. | `otlp` | Any OTLP trace receiver (Tempo, Jaeger, an OpenTelemetry collector) over gRPC or HTTP/protobuf | TLS, mTLS, headers, gzip, short in-client retry |
+| `trace` | One span tree per workflow run: run span, job spans, step spans. Only completed runs and jobs produce spans; earlier states are skipped. | `otlp` | Any OTLP trace receiver (Tempo, Jaeger, an OpenTelemetry collector) over gRPC or HTTP/protobuf | TLS, mTLS, headers, gzip, short in-client retry |
 | `log` | One log record per delivery, every event and action included, with the trace and span IDs of the run or job for correlation | `stdout` | Process stdout or stderr, one JSON document per line | For local use and container log collectors |
 | | | `otlp` | Any OTLP log receiver (Loki through a collector, or a collector directly) | Same client as the trace driver |
 | `analytics` | Sparse run, job, and step rows with a deterministic `record_id` and a `status_rank` | `bigquery` | BigQuery table through the Storage Write API, plus a `<table>_current` view with the latest state per entity | Base table is at-least-once by design; query the view. Table is DAY partitioned on `event_time`, clustered by `repository, kind` |

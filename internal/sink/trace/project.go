@@ -24,9 +24,9 @@ import (
 
 // Span name prefixes.
 const (
-	PrefixWorkflow = "workflow:"
-	PrefixJob      = "job:"
-	PrefixStep     = "step:"
+	PrefixRun  = "run:"
+	PrefixJob  = "job:"
+	PrefixStep = "step:"
 )
 
 // Attribute keys set on the exported spans.
@@ -60,7 +60,7 @@ const (
 
 // Project turns an execution into the spans it contributes to its trace.
 //
-//   - A completed run yields its root span "workflow:<name>" from the run's
+//   - A completed run yields its root span "run:<name>" from the run's
 //     start (run_started_at, or created_at when GitHub omitted it) to its
 //     updated_at, with the run attributes.
 //   - A completed job yields the job span "job:<name>" parented to the run's
@@ -112,7 +112,7 @@ func runSpan(r *model.Run) otlp.Span {
 	return otlp.Span{
 		TraceID:    r.TraceID(),
 		SpanID:     r.SpanID(),
-		Name:       PrefixWorkflow + name,
+		Name:       PrefixRun + name,
 		Kind:       otlp.SpanKindInternal,
 		Start:      orTime(r.StartedAt, r.CreatedAt),
 		End:        r.UpdatedAt,
