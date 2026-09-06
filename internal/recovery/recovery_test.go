@@ -752,3 +752,33 @@ func TestScan_NoMetricsIsFine(t *testing.T) {
 	l.ScanAll(context.Background())
 	assert.Equal(t, []int64{1}, api.redeliveries())
 }
+
+func TestScanAll_IsSafeToCallConcurrently(t *testing.T) {
+	// ScanAll is exported "so tests and operators can force a scan", so it
+	// must not depend on Run being its only caller: scan reads st.target,
+	// st.scanned and st.lastScan outside l.mu while writing them under it.
+	c := &clock{now: base}
+	api := &fakeAPI{}
+	release := make(chan struct{})
+	api.discoverFn = func(_ ghclient.Target, _ string) (int64, error) {
+		<-release // hold the first scan inside discovery so the second overlaps
+		return 77, nil
+	}
+	opts := testOptions(api, c, metrics.New("test", "abc"))
+	opts.Targets = []ghclient.Target{{Org: "acme"}}
+	l := newLoop(t, opts)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			l.ScanAll(ctx)
+		}()
+	}
+	close(release)
+	wg.Wait()
+
+	assert.EqualValues(t, 77, l.Status().Targets[0].HookID)
+}

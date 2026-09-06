@@ -997,3 +997,27 @@ func TestReadable(t *testing.T) {
 type unrenderable struct{}
 
 func (unrenderable) MarshalYAML() (any, error) { return nil, errors.New("no") }
+
+func TestServe_ReleasesWebhookListenerWhenTheRouterNeverStarts(t *testing.T) {
+	// newService binds the webhook socket, but Run is only started once
+	// router.Running() closes. When the router fails to start instead, that
+	// branch is never taken and receiverTask stays nil, so the shutdown path
+	// must close the listener itself or the port stays held.
+	store := newCaptureStore()
+	cfg := parseConfig(t, listeners+gochannelBus+oneLogSink)
+	svc, err := newService(context.Background(), cfg, nil, store.options())
+	require.NoError(t, err)
+	receiverAddr := svc.receiver.Addr().String()
+
+	// Close the bus under the router: Subscribe then fails, so router.Run
+	// returns an error without ever signalling Running.
+	require.NoError(t, svc.bus.Close())
+
+	err = svc.run(context.Background())
+	require.Error(t, err)
+	assert.NotContains(t, store.snapshot(true), stageReceiverOpen, "the receiver never opened")
+
+	again, err := net.Listen("tcp", receiverAddr)
+	require.NoError(t, err, "webhook listener must be released when the router never starts")
+	require.NoError(t, again.Close())
+}

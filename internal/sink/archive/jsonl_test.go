@@ -440,3 +440,25 @@ func (l lockedWriter) Write(p []byte) (int, error) {
 	defer l.mu.Unlock()
 	return l.w.Write(p)
 }
+
+func TestStore_SweepLeavesAPrefixSharingSinkAlone(t *testing.T) {
+	// Sink names may contain "-" and digits, so "raw" is a string prefix of
+	// every file "raw-2" writes. Sweeping on the bare prefix would gzip and
+	// delete the other sink's archive when both share a directory.
+	dir := t.TempDir()
+	day := filepath.Join(dir, "2026", "09", "01")
+	require.NoError(t, os.MkdirAll(day, 0o750))
+	line, err := archive.Encode(fixtureEnvelope(t, "ping"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(day, "raw-20260901T000000Z-1.jsonl"), line, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(day, "raw-2-20260901T000000Z-1.jsonl"), line, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(day, "raw-2-20260901T000000Z-2.jsonl.gz.tmp"), []byte("partial"), 0o600))
+
+	s := openStore(t, dir, func(o *archive.StoreOptions) { o.Compress = archive.CompressGzip })
+	assert.Equal(t, []string{
+		"2026/09/01/raw-2-20260901T000000Z-1.jsonl",
+		"2026/09/01/raw-2-20260901T000000Z-2.jsonl.gz.tmp",
+		"2026/09/01/raw-20260901T000000Z-1.jsonl.gz",
+	}, listFiles(t, dir), "only this store's own file is compressed; raw-2 keeps its plain file and its tmp")
+	require.NoError(t, s.Close())
+}

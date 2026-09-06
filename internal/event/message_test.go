@@ -153,6 +153,7 @@ func TestFromMessage_Errors(t *testing.T) {
 		{"missing received_at", func(m *message.Message) { delete(m.Metadata, MetaReceivedAt) }, ErrMissingMetadata, MetaReceivedAt},
 		{"invalid received_at", func(m *message.Message) { m.Metadata.Set(MetaReceivedAt, "yesterday") }, ErrInvalidMetadata, MetaReceivedAt},
 		{"invalid repository_id", func(m *message.Message) { m.Metadata.Set(MetaRepositoryID, "abc") }, ErrInvalidMetadata, MetaRepositoryID},
+		{"negative repository_id", func(m *message.Message) { m.Metadata.Set(MetaRepositoryID, "-1") }, ErrInvalidMetadata, MetaRepositoryID},
 		{"non-integer forward hops", func(m *message.Message) { m.Metadata.Set(MetaForwardHops, "two") }, ErrInvalidMetadata, MetaForwardHops},
 		{"negative forward hops", func(m *message.Message) { m.Metadata.Set(MetaForwardHops, "-1") }, ErrInvalidMetadata, MetaForwardHops},
 	}

@@ -234,9 +234,12 @@ it never contains a secret. It is still an admin endpoint: do not expose it.
 `404` on the webhook path means `server.webhook_path` and the GitHub webhook URL
 disagree; `405` means something sent `GET` where GitHub sends `POST`.
 
-The receiver logs every rejection with the delivery GUID (and, for a `401`,
-whether a signature header was present at all), so a rejection can be matched
-with the entry in GitHub's "Recent Deliveries" tab.
+The receiver logs every rejection. Where the request got far enough to have a
+GUID — the `401` and the malformed-delivery `400` — the log line carries it, so
+the rejection can be matched with the entry in GitHub's "Recent Deliveries" tab;
+the `401` line also records whether a signature header was present at all. A
+body over `max_body_bytes` and an unreadable body are rejected before the
+delivery headers are read, so those lines carry `remote` but no GUID.
 
 ### Ingress works but the destination is empty
 

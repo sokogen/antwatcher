@@ -359,3 +359,15 @@ func TestEverySinkDriverClassifiesErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestBinaryNeverLinksTesting: cmd blank-imports every driver package, so a
+// "testing" import in any non-test file travels into the released binary and
+// image along with the flags that package registers. Helpers other packages'
+// tests need — natsjs.NewTestServer, event.LoadFixture — take a minimal
+// interface that testing.TB satisfies instead of naming testing.TB.
+func TestBinaryNeverLinksTesting(t *testing.T) {
+	const cmd = module + "/cmd/antwatcher"
+	deps := goList(t, "-deps", "-f", "{{.ImportPath}}", cmd)
+	require.Contains(t, deps, module+"/internal/bus/natsjs", "the rule assumes cmd links every driver; update it")
+	assert.NotContains(t, deps, "testing", "%s links the testing package; take a minimal interface instead of testing.TB", cmd)
+}

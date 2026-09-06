@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
@@ -146,13 +145,24 @@ func (s serverLogger) Debugf(format string, v ...any) { s.l.Debug(fmt.Sprintf(fo
 // Tracef implements server.Logger at debug level.
 func (s serverLogger) Tracef(format string, v ...any) { s.l.Debug(fmt.Sprintf(format, v...)) }
 
+// serverT is the subset of testing.TB NewTestServer needs. Taking an interface
+// keeps the "testing" package (and its flags) out of production binaries —
+// cmd/antwatcher blank-imports this package for the driver registration —
+// while still letting any package's tests call natsjs.NewTestServer(t).
+type serverT interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	TempDir() string
+	Cleanup(func())
+}
+
 // TestServer is an embedded JetStream server for tests, stored in a temporary
 // directory, that can be stopped and started again on the same data to
 // simulate a broker outage. It implements nats.InProcessConnProvider by
 // forwarding to the current server, so a Bus opened with WithInProcess(ts)
 // reconnects to the restarted server on its own.
 type TestServer struct {
-	tb  testing.TB
+	tb  serverT
 	dir string
 
 	mu  sync.Mutex
@@ -163,7 +173,7 @@ type TestServer struct {
 var ErrServerStopped = errors.New("natsjs: test server is stopped")
 
 // NewTestServer starts a TestServer in t.TempDir() and stops it at cleanup.
-func NewTestServer(tb testing.TB) *TestServer {
+func NewTestServer(tb serverT) *TestServer {
 	tb.Helper()
 	ts := &TestServer{tb: tb, dir: tb.TempDir()}
 	ts.Start()

@@ -150,3 +150,42 @@ func TestMaskByKey_Patterns(t *testing.T) {
 		}
 	}
 }
+
+func TestMaskByKey_CredentialSpellings(t *testing.T) {
+	// The fallback masks driver blocks of drivers this build does not
+	// register: nothing knows their shape, so only the key name is a signal.
+	// A block like this reaches Redacted because Bus.UnmarshalYAML accepts
+	// any mapping under bus:, and only the selected driver is validated.
+	source := `
+server:
+  webhook_secret: s
+bus:
+  driver: gochannel
+  gochannel: {}
+  redis:
+    addr: redis:6379
+    pass: leaked-pass
+    pwd: leaked-pwd
+    bearer: leaked-bearer
+    passphrase: leaked-phrase
+    user: bob
+    db: 0
+`
+	cfg, err := Parse([]byte(source))
+	require.NoError(t, err)
+	red, err := Redacted(cfg, Describers{})
+	require.NoError(t, err)
+
+	block := red.Bus.Drivers["redis"].(map[string]any)
+	for _, key := range []string{"pass", "pwd", "bearer", "passphrase"} {
+		assert.Equal(t, Mask, block[key], "%q holds a credential and must be masked", key)
+	}
+	assert.Equal(t, "redis:6379", block["addr"], "an address is not a credential")
+	assert.Equal(t, "bob", block["user"])
+
+	out, err := yaml.Marshal(red)
+	require.NoError(t, err)
+	for _, leak := range []string{"leaked-pass", "leaked-pwd", "leaked-bearer", "leaked-phrase"} {
+		assert.NotContains(t, string(out), leak)
+	}
+}

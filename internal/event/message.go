@@ -114,8 +114,8 @@ func FromMessage(msg *message.Message) (Envelope, error) {
 	var repositoryID int64
 	if text, ok := md[MetaRepositoryID]; ok && text != "" {
 		repositoryID, err = strconv.ParseInt(text, 10, 64)
-		if err != nil {
-			return Envelope{}, fmt.Errorf("%w: %s %q is not an integer", ErrInvalidMetadata, MetaRepositoryID, text)
+		if err != nil || repositoryID < 0 {
+			return Envelope{}, fmt.Errorf("%w: %s %q is not a non-negative integer", ErrInvalidMetadata, MetaRepositoryID, text)
 		}
 	}
 

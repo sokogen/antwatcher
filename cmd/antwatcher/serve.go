@@ -209,6 +209,9 @@ func buildRecovery(cfg config.Config, m *metrics.Metrics, logger *slog.Logger, v
 
 // closeBuilt releases whatever newService managed to build, in shutdown order.
 func (s *service) closeBuilt() {
+	if s.receiver != nil {
+		_ = s.receiver.Close()
+	}
 	if s.router != nil {
 		_ = s.router.Close()
 	}
@@ -314,7 +317,14 @@ func (s *service) run(ctx context.Context) error {
 
 	var errs []error
 	s.stage(stageReceiverStop)
-	errs = append(errs, receiverTask.stop())
+	if receiverTask == nil {
+		// Shutdown beat router.Running(), so the receiver never ran. Its
+		// socket has been bound since newService, so close it here rather
+		// than leaving the port held until the process exits.
+		errs = append(errs, s.receiver.Close())
+	} else {
+		errs = append(errs, receiverTask.stop())
+	}
 	s.stage(stageRouterClose)
 	errs = append(errs, s.router.Close(), routerTask.stop(), recoveryTask.stop(), lagTask.stop(), healthTask.stop())
 	s.stage(stageSinksClose)

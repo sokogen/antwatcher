@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -430,18 +431,28 @@ func (s *Store) recover() error {
 	return s.sweep()
 }
 
+// finalizedPattern matches exactly the finalized names finalize writes for
+// this prefix. It is anchored on the whole grammar rather than testing
+// prefix+"-", because sink names may contain "-" and digits: with a bare
+// prefix test, a sink named "raw" sharing a directory with "raw-2" would
+// compress and delete "raw-2"'s files as if they were its own.
+func finalizedPattern(prefix string) *regexp.Regexp {
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(prefix) + `-\d{8}T\d{6}Z-\d+` +
+		regexp.QuoteMeta(Extension) + `(` + regexp.QuoteMeta(".gz") + `(` + regexp.QuoteMeta(tmpSuffix) + `)?)?$`)
+}
+
 // sweep removes temporary compressed files and, with compression on,
 // compresses plain finalized files of this store's prefix. Paths are
 // collected first and handled after the walk.
 func (s *Store) sweep() error {
-	prefix := s.opts.Prefix + "-"
+	finalized := finalizedPattern(s.opts.Prefix)
 	var interrupted, plain []string
 	err := filepath.WalkDir(s.opts.Dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		name := d.Name()
-		if d.IsDir() || !strings.HasPrefix(name, prefix) {
+		if d.IsDir() || !finalized.MatchString(name) {
 			return nil
 		}
 		switch {

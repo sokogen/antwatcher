@@ -120,6 +120,10 @@ commit, deliberately.
 - Every sink driver package — or the client or class package it delegates to —
   calls `sink.Permanent`: drivers classify their errors.
   (`TestEverySinkDriverClassifiesErrors`)
+- The binary never links `testing`. `cmd/` blank-imports every driver, so a
+  `testing` import in a non-test file ships in the release artifact. Helpers
+  other packages' tests need (`natsjs.NewTestServer`, `event.LoadFixture`) take
+  a minimal interface that `testing.TB` satisfies. (`TestBinaryNeverLinksTesting`)
 - The configuration reference in `docs/configuration.md` equals
   `antwatcher.example.yml`; run `make readme` after touching the example.
   (`TestConfigDocReferenceMatchesExample`)

@@ -143,6 +143,14 @@ type Loop struct {
 	logger *slog.Logger
 	now    func() time.Time
 
+	// scanMu serialises ScanAll. mu below guards targetState against
+	// concurrent readers (/status, metrics); it does not make two scans of
+	// the same target safe against each other, because a scan reads
+	// st.target, st.scanned and st.lastScan outside it. ScanAll is exported
+	// for operators and tests, so it must not rely on Run being the only
+	// caller.
+	scanMu sync.Mutex
+
 	mu      sync.Mutex
 	targets []*targetState
 }
@@ -222,6 +230,8 @@ func (l *Loop) Run(ctx context.Context) error {
 // ScanAll scans every target once, in configuration order. It is what Run
 // calls on each tick and is exported so tests and operators can force a scan.
 func (l *Loop) ScanAll(ctx context.Context) {
+	l.scanMu.Lock()
+	defer l.scanMu.Unlock()
 	for i := range l.targets {
 		if ctx.Err() != nil {
 			return
