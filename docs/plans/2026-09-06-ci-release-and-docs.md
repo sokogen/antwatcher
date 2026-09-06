@@ -169,13 +169,25 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 5: Release workflow — binaries
 
-- [ ] create `.github/workflows/release.yml` triggered on tags matching `v*`
-- [ ] build binaries for linux and darwin on amd64 and arm64, stamping the
+- [x] create `.github/workflows/release.yml` triggered on tags matching `v*`
+- [x] build binaries for linux and darwin on amd64 and arm64, stamping the
       version from the tag through the existing ldflags
-- [ ] produce one archive per target plus a `checksums.txt`
-- [ ] attach the artifacts to the GitHub Release, using `permissions: contents: write`
-- [ ] verify the workflow parses with `actionlint`
-- [ ] run tests - must pass before next task
+- [x] produce one archive per target plus a `checksums.txt`
+- [x] attach the artifacts to the GitHub Release, using `permissions: contents: write`
+- [x] verify the workflow parses with `actionlint`
+- [x] run tests - must pass before next task
+- ➕ the job calls `make build` with `VERSION`/`COMMIT`/`DATE` and a per-target
+  `BINARY`, so the release ldflags are the Makefile's, not a second copy.
+- ➕ `gh release create` fails when the tag was published through the UI, so the
+  publish step falls back to `gh release upload --clobber` on an existing
+  release. It runs on the built-in `GITHUB_TOKEN`; no repository secret.
+- ⚠️ `actionlint` is not installed on this machine; verified with v1.7.12
+  installed into a temp `GOBIN` (go.mod and go.sum untouched): 0 errors over
+  both workflows. Its `shellcheck` rule stayed disabled, shellcheck being
+  absent too. The build loop was also run locally end to end: four archives
+  plus `checksums.txt`, `antwatcher version` inside the darwin/arm64 archive
+  reporting `v0.0.0-test (commit 0123456, ...)`, and the linux/amd64 binary
+  reported by `file` as a statically linked x86-64 ELF.
 
 ### Task 6: Release workflow — container image
 

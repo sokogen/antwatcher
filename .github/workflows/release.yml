@@ -1,0 +1,68 @@
+# Runs on a version tag and publishes the service alone -- no collector, no
+# Tempo, no Grafana: archives for linux and darwin on amd64 and arm64, plus the
+# checksums that cover them.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    # Needed to create the release and attach the archives to it.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod is the single source of truth for the Go version.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `make build` owns the ldflags, so a binary released here is stamped
+      # exactly like a local one, with the tag as the version.
+      - name: Build the archives
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          mkdir -p dist
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          commit="$(echo "$COMMIT" | cut -c1-7)"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            name="antwatcher_${VERSION}_${os}_${arch}"
+            stage="dist/$name"
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              make build VERSION="$VERSION" COMMIT="$commit" DATE="$date" \
+                BINARY="$PWD/$stage/antwatcher"
+            cp README.md antwatcher.example.yml "$stage/"
+            tar -czf "dist/$name.tar.gz" -C dist "$name"
+            rm -rf "$stage"
+          done
+          ( cd dist && sha256sum ./*.tar.gz > checksums.txt )
+          ls -l dist
+
+      # `gh release create` fails if the release already exists, which it does
+      # when the tag was published through the UI, so upload into it instead.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt --clobber
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes \
+              dist/*.tar.gz dist/checksums.txt
+          fi
