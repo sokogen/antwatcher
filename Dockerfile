@@ -1,5 +1,8 @@
-# Build stage: static binary, no cgo, version stamped through ldflags.
-FROM golang:1.27-alpine AS build
+# Build stage: static binary, no cgo, version stamped through ldflags. The
+# builder always runs natively on the build platform and cross-compiles for the
+# target, so a multi-platform `docker buildx build` never falls back to
+# emulation.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -9,7 +12,12 @@ COPY . .
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-RUN CGO_ENABLED=0 go build -trimpath \
+# TARGETOS/TARGETARCH are filled in by BuildKit from the requested platform.
+# They are empty under the classic builder, where an empty GOOS/GOARCH means the
+# native toolchain default, which is exactly the build platform.
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
       -o /out/antwatcher ./cmd/antwatcher
 

@@ -618,8 +618,15 @@ image running as a non-root user. `/data` is a volume for the embedded NATS stor
 filesystem archive; the configuration is read from `/etc/antwatcher/antwatcher.yml` by
 default.
 
+The build stage runs on the build platform and cross-compiles for the target, so a
+multi-platform build never falls back to emulation. It needs BuildKit — the default
+builder in current Docker, and the deprecated legacy builder cannot expand
+`$BUILDPLATFORM`.
+
 ```sh
 docker build -t antwatcher .
+# or, for both architectures at once:
+# docker buildx build --platform linux/amd64,linux/arm64 -t antwatcher .
 docker run --rm -p 8080:8080 -p 127.0.0.1:9090:9090 \
   -e GITHUB_WEBHOOK_SECRET=... \
   -v "$PWD/antwatcher.yml:/etc/antwatcher/antwatcher.yml:ro" \

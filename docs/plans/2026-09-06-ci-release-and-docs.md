@@ -148,14 +148,24 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 4: Cross-compiling Dockerfile
 
-- [ ] change the build stage to `FROM --platform=$BUILDPLATFORM golang:1.27-alpine`
+- [x] change the build stage to `FROM --platform=$BUILDPLATFORM golang:1.27-alpine`
       and pass `TARGETOS`/`TARGETARCH` into `go build` so buildx cross-compiles
       instead of emulating
-- [ ] keep the existing `VERSION`/`COMMIT`/`DATE` build args and ldflags stamping
-- [ ] verify `docker build` still produces a working image for the host platform
-- [ ] verify `antwatcher version` inside the image reports the stamped version,
+- [x] keep the existing `VERSION`/`COMMIT`/`DATE` build args and ldflags stamping
+- [x] verify `docker build` still produces a working image for the host platform
+- [x] verify `antwatcher version` inside the image reports the stamped version,
       not `dev`
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
+- [x] ➕ note the BuildKit requirement in the README Docker section: the
+      deprecated legacy builder cannot expand `$BUILDPLATFORM` and fails at
+      `FROM`, so the image now needs BuildKit (the default in current Docker)
+- ⚠️ this machine's Docker CLI had no buildx plugin, so `make docker` ran on the
+  legacy builder and failed at `FROM`. Verified instead with the buildx binary
+  installed via Homebrew (`docker-buildx` 0.37.0, not wired into
+  `~/.docker/config.json`): a host-platform build reported
+  `antwatcher v0.0.0-test (commit abc1234, ...)`, and `--platform linux/amd64`
+  cross-compiled with `GOOS=linux GOARCH=amd64` on the native arm64 builder in
+  17s, producing a `linux/amd64` image with no emulation.
 
 ### Task 5: Release workflow — binaries
 
