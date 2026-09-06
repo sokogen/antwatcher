@@ -107,13 +107,17 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 1: Pin the linter and emit a coverage profile
 
-- [ ] set `GOLANGCI_LINT_VERSION ?= v2.13.2` in `Makefile` so local and CI agree,
+- [x] set `GOLANGCI_LINT_VERSION ?= v2.13.2` in `Makefile` so local and CI agree,
       keeping `?=` so it stays overridable
-- [ ] add `-coverprofile=coverage.out` to the `test` target (`coverage.out` is
+- [x] add `-coverprofile=coverage.out` to the `test` target (`coverage.out` is
       already in `.gitignore` and already removed by `clean`)
-- [ ] verify `make lint` still reports 0 issues with the pinned version
-- [ ] verify `make test` writes `coverage.out` and still passes
-- [ ] run tests - must pass before next task
+- [x] verify `make lint` still reports 0 issues with the pinned version
+- [x] verify `make test` writes `coverage.out` and still passes
+- [x] run tests - must pass before next task
+- [x] ➕ install the linter through a version stamp
+      (`bin/.golangci-lint-<version>`) instead of the bare binary path, so
+      changing the pin reinstalls rather than reusing whatever `bin/` holds —
+      without this the pin has no effect on a machine that already ran `latest`
 
 ### Task 2: Coverage threshold script
 

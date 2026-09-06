@@ -7,8 +7,9 @@ COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-GOLANGCI_LINT_VERSION ?= latest
+GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT         := $(BIN_DIR)/golangci-lint
+GOLANGCI_LINT_STAMP   := $(BIN_DIR)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 CONFIG      ?= antwatcher.yml
 
@@ -21,13 +22,17 @@ build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/antwatcher
 
 test:
-	go test -race -cover ./...
+	go test -race -cover -coverprofile=coverage.out ./...
 
-$(GOLANGCI_LINT):
+# The stamp carries the version, so changing the pin reinstalls instead of
+# leaving whatever binary happens to sit in $(BIN_DIR).
+$(GOLANGCI_LINT_STAMP):
 	@mkdir -p $(BIN_DIR)
 	GOBIN=$(BIN_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@rm -f $(BIN_DIR)/.golangci-lint-*
+	@touch $@
 
-lint: $(GOLANGCI_LINT)
+lint: $(GOLANGCI_LINT_STAMP)
 	$(GOLANGCI_LINT) run ./...
 
 run: build
