@@ -442,12 +442,39 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 14: Verify acceptance criteria
 
-- [ ] verify every requirement in the Overview is implemented
-- [ ] run the full test suite
-- [ ] run `make lint` — zero issues
-- [ ] run `make coverage` — threshold met
-- [ ] run `actionlint` over every workflow
-- [ ] confirm `make readme` produces no drift
+- [x] verify every requirement in the Overview is implemented
+- [x] run the full test suite
+- [x] run `make lint` — zero issues
+- [x] run `make coverage` — threshold met
+- [x] run `actionlint` over every workflow
+- [x] confirm `make readme` produces no drift
+- The five strands of the Overview, checked against the tree rather than against
+  the task list: **CI** is `.github/workflows/ci.yml`, one `ubuntu-latest` job on
+  push-to-`main` and pull requests, calling `make lint`, `make test`,
+  `make coverage` and `make check` with a dummy secret, with the Go version read
+  from `go.mod`. **Releases** are `.github/workflows/release.yml` on `v*`: a
+  `binaries` job with `contents: write` producing four archives plus
+  `checksums.txt`, each archive carrying `README.md`, `LICENSE` and
+  `antwatcher.example.yml`, and an `image` job with `packages: write` pushing a
+  linux/amd64 + linux/arm64 image to ghcr.io with `docker/metadata-action` tags.
+  **Agent instructions** are `AGENTS.md` and `docs/agent-operations.md`, with
+  `CLAUDE.md` importing the former. **README** is consumer-facing at 260 lines
+  and links `docs/configuration.md`, `docs/operations.md`,
+  `docs/agent-operations.md` and all four ADRs, closing with an MIT licence
+  section pointing at `LICENSE`. **Span prefix** is `PrefixRun = "run:"`
+  (`internal/sink/trace/project.go:27`), used at line 115; a repository-wide grep
+  for a `"workflow:` literal in Go and Markdown matches only this plan's own
+  Task 7 note.
+- Verified in one pass on 2026-09-06: `make test` — all 27 packages ok, race
+  detector on; `make lint` — 0 issues on the pinned v2.13.2; `make coverage` —
+  "every package at or above 80%", the minimum still `internal/sink/archive` at
+  86.2%; `make readme` — regenerated and `git status` clean afterwards, so no
+  drift; `actionlint` v1.7.12 over both workflows — exit 0, no output.
+- ⚠️ `actionlint` is still not installed on this machine, so it was again run
+  from a temp `GOBIN` with `GOFLAGS=-mod=mod`; `git status` was clean after the
+  install, confirming `go.mod` and `go.sum` were untouched. Its `shellcheck`
+  rule stays inactive, shellcheck being absent — the release workflow's shell
+  blocks are therefore unlinted here, and CI is where they first run for real.
 
 ### Task 15: [Final] Documentation sweep
 
