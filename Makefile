@@ -13,7 +13,10 @@ GOLANGCI_LINT_STAMP   := $(BIN_DIR)/.golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 CONFIG      ?= antwatcher.yml
 
-.PHONY: all build test lint run check tidy clean readme docker
+COVERAGE_PROFILE   ?= coverage.out
+COVERAGE_THRESHOLD ?= 80
+
+.PHONY: all build test lint coverage run check tidy clean readme docker
 
 all: lint test build
 
@@ -22,7 +25,11 @@ build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/antwatcher
 
 test:
-	go test -race -cover -coverprofile=coverage.out ./...
+	go test -race -cover -coverprofile=$(COVERAGE_PROFILE) ./...
+
+# Reads the profile `test` writes; run `make test coverage` from a clean tree.
+coverage:
+	COVERAGE_PROFILE=$(COVERAGE_PROFILE) sh scripts/check-coverage.sh $(COVERAGE_THRESHOLD)
 
 # The stamp carries the version, so changing the pin reinstalls instead of
 # leaving whatever binary happens to sit in $(BIN_DIR).
@@ -51,4 +58,4 @@ docker:
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t antwatcher:$(VERSION) .
 
 clean:
-	rm -rf $(BIN_DIR) coverage.out
+	rm -rf $(BIN_DIR) $(COVERAGE_PROFILE)

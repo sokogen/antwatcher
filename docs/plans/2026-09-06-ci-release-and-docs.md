@@ -121,17 +121,17 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 2: Coverage threshold script
 
-- [ ] create `scripts/check-coverage.sh` reading `coverage.out` and failing when
+- [x] create `scripts/check-coverage.sh` reading `coverage.out` and failing when
       any package falls below a threshold given as `$1` (default 80)
-- [ ] exclude `cmd/...` (CLAUDE.md scopes the target to packages outside `cmd/`),
+- [x] exclude `cmd/...` (CLAUDE.md scopes the target to packages outside `cmd/`),
       `internal/bus/bustest` (conformance suite, no tests by design) and
       `internal/archtest` (no statements)
-- [ ] print a per-package table so a failure names the package and its percentage
-- [ ] verify it passes at 80 against the current profile
-- [ ] verify it *fails* when invoked with an impossible threshold, so the script
+- [x] print a per-package table so a failure names the package and its percentage
+- [x] verify it passes at 80 against the current profile
+- [x] verify it *fails* when invoked with an impossible threshold, so the script
       is proven able to fail and not merely to stay silent
-- [ ] add a `make coverage` target invoking it
-- [ ] run tests - must pass before next task
+- [x] add a `make coverage` target invoking it
+- [x] run tests - must pass before next task
 
 ### Task 3: CI workflow
 
