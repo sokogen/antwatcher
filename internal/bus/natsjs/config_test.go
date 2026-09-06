@@ -1,6 +1,7 @@
 package natsjs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/nats-io/nkeys"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/sokogen/antwatcher/internal/config"
 )
@@ -117,4 +119,33 @@ func TestCredentialsOption_DecoratedJWTAndSeed(t *testing.T) {
 	opt, err := credentialsOption(creds)
 	require.NoError(t, err, "a real decorated JWT and NKey seed parse end to end")
 	assert.NotNil(t, opt, "produces a nats.UserJWTAndSeed option")
+}
+
+// TestDescribeMasksCredentialsInTheURL pins that the rendering paths behind
+// `-check`, GET /status and the startup log — all of which claim to mask
+// secrets — do not print a password embedded in the URL's userinfo, while the
+// driver still connects with the real value.
+func TestDescribeMasksCredentialsInTheURL(t *testing.T) {
+	var node yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte(`
+embedded: false
+url: nats://admin:hunter2@nats.example.com:4222
+credentials: a-user-jwt
+`), &node))
+	require.NotEmpty(t, node.Content)
+
+	described, err := Describe(*node.Content[0])
+	require.NoError(t, err)
+	require.Equal(t, "nats://admin:hunter2@nats.example.com:4222", described.(Config).URL.Reveal(),
+		"the driver must still see the real URL")
+
+	rendered, err := yaml.Marshal(described)
+	require.NoError(t, err)
+	assert.NotContains(t, string(rendered), "hunter2")
+	assert.NotContains(t, string(rendered), "a-user-jwt")
+	assert.Contains(t, string(rendered), "nats://***@nats.example.com:4222", "the host stays visible")
+
+	asJSON, err := json.Marshal(described)
+	require.NoError(t, err)
+	assert.NotContains(t, string(asJSON), "hunter2")
 }

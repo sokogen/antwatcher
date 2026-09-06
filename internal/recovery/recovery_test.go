@@ -26,79 +26,75 @@ func attempt(id int64, guid string, when time.Time, status int, redelivery bool)
 	return ghclient.Delivery{ID: id, GUID: guid, DeliveredAt: when, StatusCode: status, Redelivery: redelivery, Event: "workflow_job", Action: "completed"}
 }
 
-func TestPlan(t *testing.T) {
-	now := at(0)
-	grace := 5 * time.Minute
+// TestGroup covers the folding the recovery loop relies on in merge: one entry
+// per GUID, the latest attempt won on timestamp then on id, a 2xx anywhere in
+// the chain marking the GUID as delivered, and attempts without a GUID
+// dropped. Grace, the per-scan cap and the redelivery order belong to the loop,
+// not to group, and are covered by the TestScan_* cases.
+func TestGroup(t *testing.T) {
 	tests := []struct {
 		name       string
 		deliveries []ghclient.Delivery
-		want       []int64
+		want       map[string]attempts
 	}{
-		{name: "empty", deliveries: nil, want: []int64{}},
+		{name: "empty", deliveries: nil, want: map[string]attempts{}},
 		{
-			name: "all failed picks the latest attempt",
+			name: "all failed keeps the latest attempt",
 			deliveries: []ghclient.Delivery{
 				attempt(3, "a", at(-20*time.Minute), 503, true),
 				attempt(1, "a", at(-60*time.Minute), 503, false),
 				attempt(2, "a", at(-40*time.Minute), 502, true),
 			},
-			want: []int64{3},
+			want: map[string]attempts{"a": {latestID: 3, latestAt: at(-20 * time.Minute)}},
 		},
 		{
-			name: "one ok attempt skips the guid",
+			name: "an original 2xx marks the guid delivered",
 			deliveries: []ghclient.Delivery{
 				attempt(1, "a", at(-60*time.Minute), 200, false),
 				attempt(2, "a", at(-40*time.Minute), 503, true),
 			},
-			want: []int64{},
+			want: map[string]attempts{"a": {latestID: 2, latestAt: at(-40 * time.Minute), succeeded: true}},
 		},
 		{
-			name: "successful redelivery skips the guid",
+			name: "a successful redelivery marks the guid delivered",
 			deliveries: []ghclient.Delivery{
 				attempt(1, "a", at(-60*time.Minute), 503, false),
 				attempt(2, "a", at(-40*time.Minute), 202, true),
 			},
-			want: []int64{},
+			want: map[string]attempts{"a": {latestID: 2, latestAt: at(-40 * time.Minute), succeeded: true}},
 		},
 		{
-			name: "latest attempt inside grace is skipped",
-			deliveries: []ghclient.Delivery{
-				attempt(1, "a", at(-60*time.Minute), 503, false),
-				attempt(2, "a", at(-2*time.Minute), 503, true),
-			},
-			want: []int64{},
-		},
-		{
-			name: "attempt exactly at grace is due",
-			deliveries: []ghclient.Delivery{
-				attempt(1, "a", at(-grace), 503, false),
-			},
-			want: []int64{1},
-		},
-		{
-			name: "mixed guids sorted oldest first",
-			deliveries: []ghclient.Delivery{
-				attempt(10, "fresh", at(-time.Minute), 503, false),
-				attempt(11, "ok", at(-30*time.Minute), 200, false),
-				attempt(12, "old", at(-70*time.Minute), 500, false),
-				attempt(13, "old", at(-50*time.Minute), 500, true),
-				attempt(14, "older", at(-90*time.Minute), 404, false),
-				attempt(15, "", at(-90*time.Minute), 500, false),
-			},
-			want: []int64{14, 13},
-		},
-		{
-			name: "same timestamp prefers the higher id",
+			name: "equal timestamps prefer the higher id",
 			deliveries: []ghclient.Delivery{
 				attempt(21, "a", at(-30*time.Minute), 503, true),
 				attempt(20, "a", at(-30*time.Minute), 503, false),
 			},
-			want: []int64{21},
+			want: map[string]attempts{"a": {latestID: 21, latestAt: at(-30 * time.Minute)}},
+		},
+		{
+			name: "attempts without a guid are dropped",
+			deliveries: []ghclient.Delivery{
+				attempt(15, "", at(-90*time.Minute), 500, false),
+				attempt(16, "a", at(-90*time.Minute), 500, false),
+			},
+			want: map[string]attempts{"a": {latestID: 16, latestAt: at(-90 * time.Minute)}},
+		},
+		{
+			name: "guids stay independent",
+			deliveries: []ghclient.Delivery{
+				attempt(11, "ok", at(-30*time.Minute), 200, false),
+				attempt(12, "old", at(-70*time.Minute), 500, false),
+				attempt(13, "old", at(-50*time.Minute), 500, true),
+			},
+			want: map[string]attempts{
+				"ok":  {latestID: 11, latestAt: at(-30 * time.Minute), succeeded: true},
+				"old": {latestID: 13, latestAt: at(-50 * time.Minute)},
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, Plan(tt.deliveries, now, grace))
+			assert.Equal(t, tt.want, group(tt.deliveries))
 		})
 	}
 }

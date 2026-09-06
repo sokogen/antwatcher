@@ -416,6 +416,17 @@ func TestDiscoverHookID(t *testing.T) {
 	s.mux.HandleFunc("GET /api/v3/orgs/forbidden/hooks", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 	})
+	// endless always advertises a next page, so the loop exhausts maxPages
+	// without ever seeing the end of the list.
+	s.mux.HandleFunc("GET /api/v3/orgs/endless/hooks", func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		if page == "" {
+			page = "1"
+		}
+		n, _ := strconv.Atoi(page)
+		w.Header().Set("Link", fmt.Sprintf(`<https://api.github.com/orgs/endless/hooks?page=%d&per_page=100>; rel="next"`, n+1))
+		writeJSON(w, http.StatusOK, []any{hookJSON(int64(n), "https://other.example.com/hook")})
+	})
 	s.mux.HandleFunc("GET /api/v3/orgs/limited/hooks", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		writeJSON(w, http.StatusForbidden, map[string]string{"message": "limit"})
@@ -437,6 +448,11 @@ func TestDiscoverHookID(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
 		_, err := c.DiscoverHookID(context.Background(), Target{Org: "empty"}, webhook)
 		require.ErrorIs(t, err, ErrHookNotFound)
+	})
+	t.Run("exhausting pagination is not the same as absent", func(t *testing.T) {
+		_, err := c.DiscoverHookID(context.Background(), Target{Org: "endless"}, webhook)
+		require.ErrorContains(t, err, "pagination did not end after 500 pages")
+		assert.NotErrorIs(t, err, ErrHookNotFound, "a hook may exist past the cap; do not send the operator after a missing one")
 	})
 	t.Run("api error", func(t *testing.T) {
 		_, err := c.DiscoverHookID(context.Background(), Target{Org: "forbidden"}, webhook)

@@ -135,7 +135,7 @@ func (b *Bus) connect() error {
 			b.logger.Info("nats reconnected", "url", nc.ConnectedUrlRedacted())
 		}),
 	}
-	url := b.cfg.URL
+	url := b.cfg.URL.Reveal()
 	switch {
 	case b.opts.inProcess != nil:
 		natsOpts = append(natsOpts, nats.InProcessServer(b.opts.inProcess))

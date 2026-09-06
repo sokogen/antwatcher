@@ -48,8 +48,10 @@ type Config struct {
 	// StoreDir is the JetStream storage directory of the embedded server.
 	StoreDir string `yaml:"store_dir" json:"store_dir"`
 	// URL of the external NATS server(s) when Embedded is false, for example
-	// nats://user:pass@host:4222 or a comma-separated list.
-	URL string `yaml:"url" json:"url"`
+	// nats://host:4222 or a comma-separated list. Prefer Credentials over
+	// userinfo in the URL; a userinfo that is present is masked wherever the
+	// configuration is rendered.
+	URL config.URL `yaml:"url" json:"url"`
 	// Credentials is the content of a NATS credentials file (user JWT and
 	// NKey seed, the decorated ".creds" format) or a path to such a file.
 	// Empty means no credentials beyond what URL carries.

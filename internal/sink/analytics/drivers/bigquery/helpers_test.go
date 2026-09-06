@@ -198,6 +198,9 @@ type fakeOpener struct {
 	opens int
 	descs []*descriptorpb.DescriptorProto
 	block chan struct{} // when set, open waits for this or ctx before returning
+	// entered is closed the first time open starts waiting on block, so a test
+	// can order itself against the in-flight open instead of sleeping.
+	entered chan struct{}
 }
 
 func (o *fakeOpener) open(ctx context.Context, desc *descriptorpb.DescriptorProto) (bqdriver.Appender, error) {
@@ -208,6 +211,12 @@ func (o *fakeOpener) open(ctx context.Context, desc *descriptorpb.DescriptorProt
 	o.mu.Unlock()
 
 	if block != nil {
+		o.mu.Lock()
+		if o.entered != nil {
+			close(o.entered)
+			o.entered = nil
+		}
+		o.mu.Unlock()
 		select {
 		case <-block:
 		case <-ctx.Done():

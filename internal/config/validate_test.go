@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -40,6 +41,11 @@ func TestValidate_Rules(t *testing.T) {
 		{"webhook secret required", func(c *Config) { c.Server.WebhookSecret = "" }, "server.webhook_secret is required"},
 		{"server listen required", func(c *Config) { c.Server.Listen = "" }, "server.listen is required"},
 		{"webhook path leading slash", func(c *Config) { c.Server.WebhookPath = "hook" }, "server.webhook_path must start with"},
+		{"webhook path rejects an unterminated wildcard", func(c *Config) { c.Server.WebhookPath = "/webhook/{" }, "must not contain \"{\" or \"}\""},
+		{"webhook path rejects a wildcard segment", func(c *Config) { c.Server.WebhookPath = "/webhook/{id}" }, "must not contain \"{\" or \"}\""},
+		{"webhook path rejects a double slash", func(c *Config) { c.Server.WebhookPath = "//webhook" }, "must be a clean path"},
+		{"webhook path rejects dot segments", func(c *Config) { c.Server.WebhookPath = "/a/../webhook" }, "must be a clean path"},
+		{"webhook path rejects a trailing slash", func(c *Config) { c.Server.WebhookPath = "/webhook/" }, "must be a clean path"},
 		{"max body positive", func(c *Config) { c.Server.MaxBodyBytes = 0 }, "server.max_body_bytes must be > 0"},
 		{"publish timeout positive", func(c *Config) { c.Server.PublishTimeout = 0 }, "server.publish_timeout must be > 0"},
 		{"admin listen required", func(c *Config) { c.Admin.Listen = "" }, "admin.listen is required"},
@@ -247,4 +253,33 @@ func TestValidateDrivers(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, ValidateDrivers(cfg, d))
 	})
+}
+
+// TestValidate_WebhookPathIsMountable pins the reason the webhook_path rules
+// exist: net/http's ServeMux panics on a pattern it cannot parse, and the
+// receiver mounts the configured path directly. Every path Validate accepts
+// must mount, and no path it rejects may reach the mux.
+func TestValidate_WebhookPathIsMountable(t *testing.T) {
+	paths := []string{
+		"/webhook", "/gh/hooks", "/a", "/webhook.json",
+		"hook", "", "/webhook/{", "/a{b}c", "/webhook/{id}",
+		"//webhook", "/a/../b", "/webhook/",
+	}
+	for _, p := range paths {
+		t.Run(fmt.Sprintf("%q", p), func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Server.WebhookPath = p
+			accepted := cfg.Validate() == nil
+
+			mounts := func() (ok bool) {
+				defer func() { ok = recover() == nil }()
+				http.NewServeMux().HandleFunc("POST "+p, func(http.ResponseWriter, *http.Request) {})
+				return
+			}()
+
+			if accepted {
+				assert.True(t, mounts, "Validate accepted %q but the mux rejects it", p)
+			}
+		})
+	}
 }

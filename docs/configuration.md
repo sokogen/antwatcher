@@ -67,7 +67,10 @@ bus:
     embedded: true
     # JetStream storage directory for the embedded server.
     store_dir: ./data/nats
-    # External server URL when embedded is false, e.g. nats://nats:4222.
+    # External server URL when embedded is false, e.g. nats://nats:4222, or a
+    # comma-separated list for a cluster. Prefer credentials below over
+    # userinfo in the URL; a userinfo that is present is masked in -check,
+    # /status and the logs, but the credentials field is the intended place.
     url: ""
     # Credentials for an external server (contents of a .creds file or a token).
     credentials: ${NATS_CREDENTIALS:-}

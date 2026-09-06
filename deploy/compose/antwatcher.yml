@@ -1,0 +1,52 @@
+# antwatcher configuration for docker-compose.example.yml.
+# Embedded JetStream under /data, traces and logs to the OpenTelemetry
+# collector, events to stdout, raw payloads archived under /data/archive.
+
+server:
+  listen: ":8080"
+  webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+  public_url: ${ANTWATCHER_PUBLIC_URL:-http://localhost:8080/webhook}
+
+admin:
+  # Inside the container; the compose file publishes it to the host loopback only.
+  listen: "0.0.0.0:9090"
+
+bus:
+  driver: nats-jetstream
+  on_missing_capability: fail
+  nats-jetstream:
+    embedded: true
+    store_dir: /data/nats
+    retention: 168h
+
+sinks:
+  - name: tempo
+    class: trace
+    driver: otlp
+    start_from: earliest
+    config:
+      endpoint: "otel-collector:4317"
+      protocol: grpc
+      insecure: true
+
+  - name: loki
+    class: log
+    driver: otlp
+    start_from: earliest
+    config:
+      endpoint: "otel-collector:4318"
+      protocol: http
+      insecure: true
+
+  - name: events
+    class: log
+    driver: stdout
+    start_from: now
+
+  - name: raw
+    class: archive
+    driver: filesystem
+    start_from: earliest
+    config:
+      dir: /data/archive
+      compress: gzip

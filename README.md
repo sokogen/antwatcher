@@ -51,7 +51,7 @@ And the properties that make it worth putting in front of a webhook:
 One run as a span tree in Tempo — the run, its job and every step, with the step that failed
 carrying the error:
 
-![A GitHub Actions workflow run as a span tree in Grafana Tempo: run:CI over job:test over six step spans, with error markers on the run, the job and the step that failed](docs/images/trace-waterfall.png)
+![A GitHub Actions workflow run as a span tree in Grafana Tempo: run:CI over job:test over five step spans, with error markers on the run, the job and the step that failed](docs/images/trace-waterfall.png)
 
 The six deliveries behind that run as records in Loki, each carrying the trace ID, so a
 record links straight back to the span tree:
@@ -60,6 +60,20 @@ record links straight back to the span tree:
 
 Both are `docker-compose.example.yml`, which runs antwatcher next to an OpenTelemetry
 collector, Tempo, Loki and Grafana — see [Docker](#docker).
+
+## Install
+
+Every tagged release publishes a multi-architecture container image and static binaries:
+
+```sh
+docker pull ghcr.io/sokogen/antwatcher:latest   # or a version tag, e.g. v0.1.0
+```
+
+Binaries for linux and darwin on amd64 and arm64 are attached to each
+[release](https://github.com/sokogen/antwatcher/releases) as
+`antwatcher_<version>_<os>_<arch>.tar.gz`, each carrying the binary, `README.md`, `LICENSE`
+and `antwatcher.example.yml`, with a `checksums.txt` covering all four. Or build from
+source, as the quick start does.
 
 ## Quick start
 
@@ -201,14 +215,15 @@ multi-platform build never falls back to emulation — which needs BuildKit, the
 builder in current Docker, as the deprecated legacy builder cannot expand `$BUILDPLATFORM`.
 
 ```sh
-docker build -t antwatcher .
-# or, for both architectures at once:
+docker pull ghcr.io/sokogen/antwatcher:latest
+# or build it yourself:
+# docker build -t antwatcher .
 # docker buildx build --platform linux/amd64,linux/arm64 -t antwatcher .
 docker run --rm -p 8080:8080 -p 127.0.0.1:9090:9090 \
   -e GITHUB_WEBHOOK_SECRET=... \
   -v "$PWD/antwatcher.yml:/etc/antwatcher/antwatcher.yml:ro" \
   -v antwatcher-data:/data \
-  antwatcher
+  ghcr.io/sokogen/antwatcher:latest
 ```
 
 Set `store_dir` and archive `dir` under `/data` and bind the admin listener to
@@ -242,11 +257,16 @@ export VERSION=$(git describe --tags --always --dirty) \
 
 ```sh
 make build      # ./bin/antwatcher
-make test       # go test -race -cover ./...
-make lint       # golangci-lint, installed into ./bin on first use
+make test       # go test -race -cover ./..., writes coverage.out
+make coverage   # per-package 80% gate, reads the profile make test wrote
+make lint       # golangci-lint, pinned, installed into ./bin on first use
 make readme     # regenerate docs/configuration.md from antwatcher.example.yml
-make check CONFIG=antwatcher.example.yml
+GITHUB_WEBHOOK_SECRET=dummy make check CONFIG=antwatcher.example.yml
 ```
+
+CI runs exactly these targets, so a green `make lint test coverage` locally is a green CI.
+`make check` on the example config needs `GITHUB_WEBHOOK_SECRET` set, because the file
+references it.
 
 The test suite needs no network and no external services: unit tests use the in-process
 `gochannel` bus, integration tests start an embedded JetStream server in a temporary

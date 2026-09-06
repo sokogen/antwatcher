@@ -177,7 +177,7 @@ func TestExternalURLMode(t *testing.T) {
 	cfg := natsjs.DefaultConfig()
 	cfg.Embedded = false
 	cfg.StoreDir = ""
-	cfg.URL = srv.ClientURL()
+	cfg.URL = config.URL(srv.ClientURL())
 	cfg.Retention = time.Hour
 	cfg.DedupWindow = time.Minute
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -632,19 +632,21 @@ func TestRedactedConfigMasksCredentials(t *testing.T) {
 	full := config.Default()
 	var b config.Bus
 	require.NoError(t, yaml.Unmarshal([]byte(
-		"driver: nats-jetstream\ntopic: t\nnats-jetstream:\n  embedded: false\n  url: nats://broker:4222\n  credentials: hunter2\n"), &b))
+		"driver: nats-jetstream\ntopic: t\nnats-jetstream:\n  embedded: false\n  url: nats://admin:s3cret@broker:4222\n  credentials: hunter2\n"), &b))
 	full.Bus = b
 
 	red, err := config.Redacted(full, config.Describers{Bus: bus.Describers()})
 	require.NoError(t, err)
 	typed, ok := red.Bus.Drivers["nats-jetstream"].(natsjs.Config)
 	require.True(t, ok, "the block is rendered as the typed driver config")
-	assert.Equal(t, "nats://broker:4222", typed.URL)
+	assert.Equal(t, "nats://admin:s3cret@broker:4222", typed.URL.Reveal(), "the value itself is intact for the driver")
 	assert.False(t, typed.Embedded)
 
 	out, err := yaml.Marshal(red)
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "hunter2")
+	assert.NotContains(t, string(out), "s3cret", "a password in the url's userinfo is a credential too")
+	assert.Contains(t, string(out), "nats://***@broker:4222", "the host stays visible")
 	assert.Contains(t, string(out), config.Mask)
 	assert.Equal(t, config.Mask, typed.Credentials.String())
 	assert.Equal(t, "hunter2", typed.Credentials.Reveal(), "the value itself is intact for the driver")

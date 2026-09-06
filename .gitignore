@@ -11,4 +11,4 @@ coverage.html
 
 # local runtime state
 /data/
-antwatcher.yml
+/antwatcher.yml

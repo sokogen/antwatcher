@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path"
 	"regexp"
 	"strings"
 
@@ -21,8 +22,16 @@ func (c *Config) Validate() error {
 	if c.Server.Listen == "" {
 		add("server.listen is required")
 	}
-	if !strings.HasPrefix(c.Server.WebhookPath, "/") {
+	// The receiver mounts the path on a net/http ServeMux, which panics on a
+	// pattern it cannot parse. Reject those here so -check reports them instead
+	// of the service crashing on the first start.
+	switch {
+	case !strings.HasPrefix(c.Server.WebhookPath, "/"):
 		add("server.webhook_path must start with \"/\" (got %q)", c.Server.WebhookPath)
+	case strings.ContainsAny(c.Server.WebhookPath, "{}"):
+		add("server.webhook_path must not contain \"{\" or \"}\": the path is matched literally, not as a pattern (got %q)", c.Server.WebhookPath)
+	case path.Clean(c.Server.WebhookPath) != c.Server.WebhookPath:
+		add("server.webhook_path must be a clean path, %q would never match (try %q)", c.Server.WebhookPath, path.Clean(c.Server.WebhookPath))
 	}
 	if c.Server.WebhookSecret == "" {
 		add("server.webhook_secret is required")

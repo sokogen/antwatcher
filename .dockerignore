@@ -9,7 +9,7 @@ data/
 dist/
 coverage.out
 coverage.html
-antwatcher.yml
+/antwatcher.yml
 docs/
 deploy/
 docker-compose*.yml

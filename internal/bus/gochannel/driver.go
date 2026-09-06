@@ -155,7 +155,9 @@ func (b *Bus) Subscribe(ctx context.Context, consumer string, opts bus.Subscribe
 	return &subscriber{bus: b, consumer: consumer, cutoff: cutoff, lifetime: lifetime, cancel: cancel}, nil
 }
 
-// Close implements bus.Bus. It closes every subscriber and waits for them.
+// Close implements bus.Bus. Closing the Pub/Sub closes the input channel of
+// every subscriber, which ends their forwarding goroutines. Later calls are
+// no-ops.
 func (b *Bus) Close() error {
 	b.mu.Lock()
 	if b.closed {

@@ -10,6 +10,25 @@ The complete field-by-field configuration reference is
 [operations](operations.md). This file is the part that is not a reference: what
 to choose, what to verify, and how to read the signals when it misbehaves.
 
+## Getting the binary
+
+Every tagged release publishes a multi-architecture image and static binaries, so
+there is no need for a Go toolchain on the target host:
+
+```sh
+docker pull ghcr.io/sokogen/antwatcher:latest   # or a version tag, e.g. v0.1.0
+```
+
+Binaries for linux and darwin on amd64 and arm64 are attached to each
+[release](https://github.com/sokogen/antwatcher/releases) as
+`antwatcher_<version>_<os>_<arch>.tar.gz`, with a `checksums.txt` covering them.
+Pin a version tag rather than `latest` anywhere you care about reproducibility.
+Building from source (`make build`, Go 1.27 or newer) is the third option and the
+only one that needs the repository.
+
+`antwatcher version` prints the stamped version, commit and build date; that is
+the fastest way to confirm which build is actually running.
+
 ## What you are deploying
 
 One binary, one configuration file, two listeners:

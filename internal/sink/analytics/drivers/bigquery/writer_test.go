@@ -305,26 +305,27 @@ func TestWrite_WaiterRespectsOwnCtxWhileAnotherOpens(t *testing.T) {
 
 func TestClose_WaitsOutStreamOpenInFlightAndClosesItExactlyOnce(t *testing.T) {
 	app := &fakeAppender{}
-	opener := &fakeOpener{app: app, block: make(chan struct{})}
+	opener := &fakeOpener{app: app, block: make(chan struct{}), entered: make(chan struct{})}
+	entered := opener.entered
 	w := bqdriver.NewWriter(validConfig(), newFakeTables(), opener.open, nil)
 	recs := fixtureRecords(t, "workflow_job.completed")
 
-	writeStarted := make(chan struct{})
 	writeDone := make(chan error, 1)
-	go func() {
-		close(writeStarted)
-		writeDone <- w.Write(context.Background(), recs)
-	}()
-	<-writeStarted
-	time.Sleep(5 * time.Millisecond) // let Write reach the fake opener's block
+	go func() { writeDone <- w.Write(context.Background(), recs) }()
+	<-entered // the open is now in flight and parked
 
 	closeDone := make(chan error, 1)
-	go func() {
-		closeDone <- w.Close()
-	}()
-	time.Sleep(5 * time.Millisecond) // let Close start waiting on the in-flight open
-	close(opener.block)
+	go func() { closeDone <- w.Close() }()
 
+	// The point of the test: Close must not return while the open it will have
+	// to clean up after is still running. Without the wait in Close, this fires.
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned while a stream open was in flight: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(opener.block)
 	require.NoError(t, <-closeDone)
 	<-writeDone // either it opened before Close observed it, or the open self-closed once it saw closed
 	assert.Equal(t, 1, app.closed, "the stream opened concurrently with Close is closed exactly once, never leaked")

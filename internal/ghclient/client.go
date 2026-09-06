@@ -199,6 +199,7 @@ func (c *Client) DiscoverHookID(ctx context.Context, target Target, webhookURL s
 		return 0, fmt.Errorf("ghclient: discover hook %s: webhook url: %w", target, err)
 	}
 	var matches []int64
+	var ended bool
 	opts := &github.ListOptions{PerPage: PerPage}
 	for page := 0; page < maxPages; page++ {
 		hooks, resp, err := c.listHooks(ctx, target, opts)
@@ -212,9 +213,15 @@ func (c *Client) DiscoverHookID(ctx context.Context, target Target, webhookURL s
 			}
 		}
 		if resp.NextPage == 0 || resp.NextPage == opts.Page {
+			ended = true
 			break
 		}
 		opts.Page = resp.NextPage
+	}
+	// Running out of pages is not the same as finding nothing: reporting
+	// ErrHookNotFound here would send the operator after a hook that exists.
+	if !ended && len(matches) == 0 {
+		return 0, fmt.Errorf("ghclient: discover hook %s: pagination did not end after %d pages", target, maxPages)
 	}
 	switch len(matches) {
 	case 0:

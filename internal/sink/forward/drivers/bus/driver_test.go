@@ -159,7 +159,7 @@ func TestDriver_RegisteredInDefaultRegistry(t *testing.T) {
 	d, ok := sink.Describers()[config.SinkKey("forward", "bus")]
 	require.True(t, ok)
 
-	typed, err := d.Describe(block(t, "driver: nats-jetstream\ntopic: github.events\nmax_hops: 2\nnats-jetstream:\n  embedded: false\n  url: nats://other:4222\n  credentials: hunter2\n"))
+	typed, err := d.Describe(block(t, "driver: nats-jetstream\ntopic: github.events\nmax_hops: 2\nnats-jetstream:\n  embedded: false\n  url: nats://admin:s3cret@other:4222\n  credentials: hunter2\n"))
 	require.NoError(t, err)
 	cfg, ok := typed.(fwdbus.Config)
 	require.True(t, ok)
@@ -168,15 +168,16 @@ func TestDriver_RegisteredInDefaultRegistry(t *testing.T) {
 	assert.Equal(t, 2, cfg.MaxHops)
 	nats, ok := cfg.Drivers["nats-jetstream"].(natsjs.Config)
 	require.True(t, ok, "the target block is described by the bus driver: %T", cfg.Drivers["nats-jetstream"])
-	assert.Equal(t, "nats://other:4222", nats.URL)
+	assert.Equal(t, "nats://admin:s3cret@other:4222", nats.URL.Reveal(), "the target driver still gets the real url")
 	assert.False(t, nats.Embedded)
 	assert.Equal(t, "ANTWATCHER", nats.Stream, "bus driver defaults apply to the target block")
 
 	out, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "hunter2", "secrets in the target block mask themselves")
+	assert.NotContains(t, string(out), "s3cret", "so does a password in the target url's userinfo")
 	assert.Contains(t, string(out), "driver: nats-jetstream\ntopic: github.events\nmax_hops: 2\nnats-jetstream:\n")
-	assert.Contains(t, string(out), "  url: nats://other:4222\n")
+	assert.Contains(t, string(out), "  url: nats://***@other:4222\n", "the target host stays visible, its credentials do not")
 
 	typed, err = d.Describe(yaml.Node{})
 	require.NoError(t, err)

@@ -133,7 +133,10 @@ func (h *Handler) serveWebhook(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("webhook publish failed", "err", err, "result", result,
 			"delivery", env.DeliveryGUID, "event", env.Event, "action", env.Action,
 			"repository", env.Repository, "publish_ms", publishLatency.Milliseconds())
-		writeError(w, http.StatusServiceUnavailable, "publish: "+err.Error(), env.DeliveryGUID)
+		// The driver's error text (broker addresses, stream names) stays in the
+		// log above: this body lands in GitHub's delivery log, which is a wider
+		// audience than the operator. The GUID is the correlation handle.
+		writeError(w, http.StatusServiceUnavailable, "publish failed", env.DeliveryGUID)
 		return
 	}
 

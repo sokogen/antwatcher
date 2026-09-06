@@ -431,7 +431,17 @@ func testReportsLag(t *testing.T, open func(t *testing.T) bus.Bus) {
 
 func testDurablePublish(t *testing.T, open func(t *testing.T) bus.Bus, outage func(t *testing.T) (restore func())) {
 	r := newRun(t, open)
-	r.publish(r.message())
+
+	// DurablePublish says Publish returns nil only once the broker has stored
+	// the message. Remember what it acknowledged before the outage; the read
+	// back at the end is what actually proves the claim.
+	const before = 3
+	stored := make(map[string]struct{}, before)
+	for range before {
+		msg := r.message()
+		r.publish(msg)
+		stored[msg.UUID] = struct{}{}
+	}
 
 	restore := outage(t)
 	restored := false
@@ -455,6 +465,32 @@ func testDurablePublish(t *testing.T, open func(t *testing.T) bus.Bus, outage fu
 		defer cancel()
 		return r.b.Publish(ctx, r.message()) == nil
 	}, receiveTimeout, 200*time.Millisecond, "publish must succeed again once the broker is back")
+
+	// Replay the restarted broker from the beginning. A driver whose Publish
+	// returns nil for a fire-and-forget send passes every assertion above and
+	// fails here, which is the only assertion that distinguishes the two.
+	_, ch := r.consumer("durable-publish", bus.Earliest)
+	deadline := time.After(receiveTimeout)
+	for len(stored) > 0 {
+		select {
+		case msg, ok := <-ch:
+			require.True(t, ok, "subscriber channel closed while replaying the history")
+			msg.Ack()
+			if msg.Metadata.Get(metaRun) == r.id {
+				delete(stored, msg.UUID)
+			}
+		case <-deadline:
+			require.Emptyf(t, stored, "Publish returned nil for %d message(s) before the outage, but the broker did not have them after it: %v", len(stored), keys(stored))
+		}
+	}
+}
+
+func keys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func uuids(msgs map[string]*message.Message) map[string]struct{} {
