@@ -7,6 +7,8 @@ package bustest
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -432,6 +434,14 @@ func testReportsLag(t *testing.T, open func(t *testing.T) bus.Bus) {
 func testDurablePublish(t *testing.T, open func(t *testing.T) bus.Bus, outage func(t *testing.T) (restore func())) {
 	r := newRun(t, open)
 
+	// The proof below reads the history back through an Earliest consumer, so
+	// it needs HistoricalReplay. A driver declaring DurablePublish without it
+	// gives the suite no way to tell a stored publish from a fire-and-forget
+	// one; say so instead of failing on the replay assertion.
+	if !r.b.Capabilities().HistoricalReplay {
+		t.Fatal("driver declares DurablePublish without HistoricalReplay: the suite cannot prove the claim, because it proves it by replaying the broker's history after an outage")
+	}
+
 	// DurablePublish says Publish returns nil only once the broker has stored
 	// the message. Remember what it acknowledged before the outage; the read
 	// back at the end is what actually proves the claim.
@@ -480,17 +490,9 @@ func testDurablePublish(t *testing.T, open func(t *testing.T) bus.Bus, outage fu
 				delete(stored, msg.UUID)
 			}
 		case <-deadline:
-			require.Emptyf(t, stored, "Publish returned nil for %d message(s) before the outage, but the broker did not have them after it: %v", len(stored), keys(stored))
+			require.Emptyf(t, stored, "Publish returned nil for %d message(s) before the outage, but the broker did not have them after it: %v", len(stored), slices.Sorted(maps.Keys(stored)))
 		}
 	}
-}
-
-func keys(m map[string]struct{}) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 func uuids(msgs map[string]*message.Message) map[string]struct{} {

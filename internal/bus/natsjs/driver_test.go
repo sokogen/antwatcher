@@ -174,6 +174,23 @@ func TestEnsureStreamRefusesAStreamCarryingAnotherTopic(t *testing.T) {
 	assert.Equal(t, []string{"other.topic"}, other.CachedInfo().Config.Subjects)
 }
 
+// TestEnsureStreamReportsALookupFailure covers the third arm of the lookup:
+// neither success nor "not found", but a broker that cannot answer. Creating
+// the stream regardless would bypass the subject guard above, so the error has
+// to surface.
+func TestEnsureStreamReportsALookupFailure(t *testing.T) {
+	ts := natsjs.NewTestServer(t)
+	js := jsClient(t, ts)
+	cfg := ts.Config()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := natsjs.EnsureStream(ctx, js, cfg, topic)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "look up stream")
+}
+
 func TestStreamConfig(t *testing.T) {
 	cfg := natsjs.DefaultConfig()
 	sc := natsjs.StreamConfig(cfg, topic)

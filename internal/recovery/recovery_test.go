@@ -373,6 +373,51 @@ func TestScan_WindowsAndRedelivery(t *testing.T) {
 	assert.Equal(t, 1, l.Status().Targets[0].Pending)
 }
 
+// TestScan_GraceBoundary pins both comparisons in redeliver at exactly Grace.
+// Statement coverage cannot see this: every other TestScan_ case sits minutes
+// away from the boundary, so flipping either `<` to `<=` leaves them green
+// while a delivery due on the tick is deferred a whole scan interval.
+func TestScan_GraceBoundary(t *testing.T) {
+	const grace = 5 * time.Minute
+
+	t.Run("one nanosecond inside grace is not due", func(t *testing.T) {
+		c := &clock{now: base}
+		api := &fakeAPI{}
+		api.listFn = func(_ ghclient.Target, _ time.Time) ([]ghclient.Delivery, error) {
+			return []ghclient.Delivery{attempt(1, "g", c.Now().Add(-grace+time.Nanosecond), 503, false)}, nil
+		}
+		l := newLoop(t, testOptions(api, c, nil))
+
+		l.ScanAll(context.Background())
+		assert.Empty(t, api.redeliveries(), "still inside grace by a nanosecond")
+	})
+
+	t.Run("exactly at grace is due", func(t *testing.T) {
+		c := &clock{now: base}
+		api := &fakeAPI{}
+		api.listFn = func(_ ghclient.Target, _ time.Time) ([]ghclient.Delivery, error) {
+			return []ghclient.Delivery{attempt(1, "g", at(-time.Hour), 503, false)}, nil
+		}
+		l := newLoop(t, testOptions(api, c, nil))
+
+		// The attempt is an hour old, so only the first comparison is at play
+		// on this tick; make it exact by moving the clock to attempt + grace.
+		c.Advance(-time.Hour + grace)
+		l.ScanAll(context.Background())
+		assert.Equal(t, []int64{1}, api.redeliveries(), "an attempt exactly grace old is due")
+
+		// Now the second comparison: requestedAt is the tick above, so exactly
+		// grace later the same GUID is requested again.
+		c.Advance(grace - time.Nanosecond)
+		l.ScanAll(context.Background())
+		assert.Equal(t, []int64{1}, api.redeliveries(), "a request one nanosecond inside grace is not repeated")
+
+		c.Advance(time.Nanosecond)
+		l.ScanAll(context.Background())
+		assert.Equal(t, []int64{1, 1}, api.redeliveries(), "a request exactly grace old is repeated")
+	})
+}
+
 func TestScan_ClampsIncrementalWindowToLookback(t *testing.T) {
 	c := &clock{now: base}
 	api := &fakeAPI{}

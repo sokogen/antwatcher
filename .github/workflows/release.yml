@@ -10,6 +10,15 @@ on:
 permissions:
   contents: read
 
+# Two workflows for one tag -- a tag deleted and re-pushed, or two tags pushed
+# together -- would race on `gh release upload --clobber` and on the `latest`
+# image, leaving whichever finished last rather than the higher version. They
+# are queued instead of cancelled: a half-published release is worse than a
+# slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   binaries:
     runs-on: ubuntu-latest
@@ -98,8 +107,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      # The same short commit and UTC timestamp the binaries job stamps, so an
-      # image and an archive from one tag report identical build metadata.
+      # The short commit is the one the binaries job stamps. The timestamp is
+      # this job's own: the two jobs run in parallel on separate runners, so an
+      # image and an archive from one tag report the same version and commit
+      # but their own build times, minutes apart at most.
       - name: Stamp the build metadata
         id: stamp
         env:

@@ -92,7 +92,7 @@ does not slow ingress and does not affect `/readyz`.
 | Same, but into the container log stream | `log` | `stdout` | Nothing |
 | Queryable rows per run/job/step | `analytics` | `bigquery` | A GCP project and an existing dataset; `credentials_file`, or Application Default Credentials when it is empty |
 | Raw payloads kept on disk | `archive` | `filesystem` | A writable directory, ideally a volume |
-| Re-publish everything to another broker | `forward` | `bus` | A second bus; it refuses to publish back into the ingress topic |
+| Re-publish everything to another broker | `forward` | `bus` | A second bus; it refuses to publish back into the ingress topic, and on a shared broker it needs a `stream` of its own — see [configuration](configuration.md#bus-drivers-and-capabilities) |
 
 `start_from` is **required and has no default**, because the two answers differ by
 a potentially large replay:

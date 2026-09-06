@@ -56,9 +56,12 @@ installed under a version stamp, so changing the pin reinstalls. Its config is
 revive, gocritic, gosec, testifylint, gofmt, goimports with the module as local
 prefix. Tests are linted too.
 
-CI (`.github/workflows/ci.yml`) runs exactly these targets on every push to `main`
-and every pull request; there is nothing to reproduce locally that a green
-`make lint test coverage` does not already cover. `.github/workflows/release.yml`
+CI (`.github/workflows/ci.yml`) runs `make lint`, `make test`, `make coverage` and
+`make check` on the example config, on every push to `main` and every pull
+request; a green `make lint test coverage` locally is a green CI. `make readme`
+is deliberately not a step — `TestConfigDocReferenceMatchesExample` catches the
+drift inside `make test` — and neither is `make docker`, so the image build is
+first exercised on a release tag. `.github/workflows/release.yml`
 runs on a `v*` tag and publishes binaries plus a multi-arch ghcr.io image.
 
 ## Layout
@@ -120,8 +123,9 @@ commit, deliberately.
 - The configuration reference in `docs/configuration.md` equals
   `antwatcher.example.yml`; run `make readme` after touching the example.
   (`TestConfigDocReferenceMatchesExample`)
-- The README's driver table mentions every registered driver name in backticks.
-  (`TestREADMEListsEveryShippedDriver`)
+- The README's driver table and the hand-written matrices in
+  `docs/configuration.md` mention every registered driver name in backticks.
+  (`TestDocsListEveryShippedDriver`)
 
 ## Conventions
 
@@ -135,7 +139,9 @@ commit, deliberately.
   (unknown keys fail) on top of a `DefaultConfig()`. Secrets are `config.Secret`
   so `-check` and `/status` mask them. Every driver ships a `Describe` function
   used for validation and redaction; implement `config.DriverValidator` for
-  cross-checks against the core config.
+  cross-checks against `router`, and `config.IngressValidator` when a sink block
+  must be checked against the ingress bus (the forward driver uses it to refuse
+  publishing into the topic the sinks consume).
 - **Registration** happens in `init()` of the driver package;
   `cmd/antwatcher/drivers.go` imports it. Nothing else references a driver by
   import path.
@@ -159,11 +165,14 @@ commit, deliberately.
    `Publish` honors ctx and returns nil only under the guarantee you declare;
    `Subscribe` validates the consumer name with `bus.ValidateConsumerName`,
    creates an independent consumer per name, and returns a Subscriber bound to the
-   bus topic; `Close` is idempotent, later calls return `bus.ErrClosed`.
+   bus topic; `Close` is idempotent — a second call returns nil — and makes
+   later `Publish` and `Subscribe` calls return `bus.ErrClosed`.
 3. `Capabilities()` tells the truth for the given configuration.
 4. `init()`: `bus.Register(Name, bus.Driver{Factory: Open, Describer: config.DescriberFunc(Describe)})`.
 5. `driver_test.go`: `bustest.Run(t, open)`, with `bustest.WithOutage` when you
    declare `DurablePublish`; assert capabilities and their policy consequences.
+   The suite proves `DurablePublish` by replaying the broker's history after an
+   outage, so a driver declaring it must declare `HistoricalReplay` too.
 6. Import in `cmd/antwatcher/drivers.go`; add to `busDrivers` in
    `internal/archtest`; add a row to the `docs/configuration.md` and ADR 0002
    matrices, name it in the README's bus paragraph, and add a driver block to

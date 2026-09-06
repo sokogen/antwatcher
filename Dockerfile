@@ -2,6 +2,10 @@
 # builder always runs natively on the build platform and cross-compiles for the
 # target, so a multi-platform `docker buildx build` never falls back to
 # emulation.
+#
+# The tag tracks the `go` directive in go.mod, which is the single source of
+# truth for the version; bump both together. Nothing in CI builds this image,
+# so a mismatch would first surface on a release tag.
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
 

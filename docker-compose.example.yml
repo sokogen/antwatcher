@@ -97,7 +97,10 @@ services:
     volumes:
       - ./deploy/compose/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
     ports:
-      - "3000:3000"
+      # Loopback only, like the admin listener above: anonymous access is on
+      # with the Admin role, which can point a new data source at anything the
+      # compose network reaches.
+      - "127.0.0.1:3000:3000"
     depends_on:
       - tempo
       - loki

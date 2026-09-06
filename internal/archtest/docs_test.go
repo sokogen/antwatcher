@@ -53,19 +53,31 @@ func TestConfigDocReferenceMatchesExample(t *testing.T) {
 		"%s configuration reference differs from antwatcher.example.yml; run `make readme`", configDoc)
 }
 
-// TestREADMEListsEveryShippedDriver keeps the README's driver table in step with
-// the drivers wired into the binary: every driver package imported by
-// cmd/antwatcher/drivers.go must be named in the README by its Name constant
-// (the configuration spelling), not by its package name.
+// TestDocsListEveryShippedDriver keeps the hand-written driver tables in step
+// with the drivers wired into the binary: every driver package imported by
+// cmd/antwatcher/drivers.go must be named by its Name constant (the
+// configuration spelling, not the package name) in both the README's compact
+// table and the class and capability matrices in docs/configuration.md.
 //
-// It still reads README.md after the reference material moved into docs/,
-// deliberately: docs/configuration.md names every driver inside the generated
-// block, so drift there is already impossible, while the README's compact table
-// is hand-written and is the only place a new driver can be forgotten.
-func TestREADMEListsEveryShippedDriver(t *testing.T) {
+// Both documents are checked because both are hand-written. The generated
+// block of docs/configuration.md does name every driver, but it is a copy of
+// antwatcher.example.yml and says nothing about the matrices an operator reads
+// above it to choose a driver.
+func TestDocsListEveryShippedDriver(t *testing.T) {
 	root := moduleRoot(t)
-	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
-	require.NoError(t, err)
+	docs := map[string]string{}
+	for _, name := range []string{"README.md", configDoc} {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		require.NoError(t, err)
+		docs[name] = string(body)
+	}
+	// The generated block is antwatcher.example.yml verbatim and would satisfy
+	// the check on its own, hiding drift in the matrices above it.
+	text := docs[configDoc]
+	begin, end := strings.Index(text, configReferenceBegin), strings.Index(text, configReferenceEnd)
+	require.Less(t, -1, begin)
+	require.Less(t, begin, end)
+	docs[configDoc] = text[:begin] + text[end:]
 
 	var checked int
 	for _, file := range sourceFiles(t, filepath.Join(root, "cmd", "antwatcher"), false) {
@@ -79,7 +91,9 @@ func TestREADMEListsEveryShippedDriver(t *testing.T) {
 			}
 			name := driverName(t, packageDir(t, path))
 			checked++
-			assert.Contains(t, string(readme), "`"+name+"`", "README.md does not mention driver %q (%s)", name, path)
+			for doc, body := range docs {
+				assert.Contains(t, body, "`"+name+"`", "%s does not mention driver %q (%s)", doc, name, path)
+			}
 		}
 	}
 	require.Positive(t, checked, "cmd/antwatcher/drivers.go imports no driver package")

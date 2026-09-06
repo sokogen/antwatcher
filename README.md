@@ -28,7 +28,7 @@ Each sink is one named consumer of the bus, configured by class and driver:
 | `trace` | One span tree per workflow run | `otlp` | Any OTLP trace receiver: Tempo, Jaeger, an OpenTelemetry collector |
 | `log` | One record per delivery, correlated with the trace | `stdout`, `otlp` | Process stdout, or any OTLP log receiver such as Loki behind a collector |
 | `analytics` | Sparse run, job and step rows | `bigquery` | A BigQuery table through the Storage Write API, plus a `_current` view |
-| `archive` | The raw envelope and payload, one JSON line each | `filesystem` | A dated directory tree, fsynced before ack |
+| `archive` | The raw envelope with the payload nested, one JSON line per event | `filesystem` | A dated directory tree, fsynced before ack |
 | `forward` | The raw event, re-published with hop markers | `bus` | Another bus topic, for a downstream consumer |
 
 And the properties that make it worth putting in front of a webhook:
@@ -264,7 +264,8 @@ make readme     # regenerate docs/configuration.md from antwatcher.example.yml
 GITHUB_WEBHOOK_SECRET=dummy make check CONFIG=antwatcher.example.yml
 ```
 
-CI runs exactly these targets, so a green `make lint test coverage` locally is a green CI.
+CI runs `make lint`, `make test`, `make coverage` and `make check`, so a green
+`make lint test coverage` locally is a green CI.
 `make check` on the example config needs `GITHUB_WEBHOOK_SECRET` set, because the file
 references it.
 

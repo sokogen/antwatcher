@@ -653,3 +653,26 @@ func TestRouter_WatermillMetricsRegisteredOnce(t *testing.T) {
 	assert.Equal(t, 4, cnt, "every result series exists as zero from the start")
 	require.NoError(t, b.Close())
 }
+
+// TestRouter_LastSuccessExistsBeforeTheFirstSuccess pins what the
+// AntwatcherSinkNoRecentSuccess alert in docs/operations.md depends on: a sink
+// that has never succeeded must still publish the series, at zero. An absent
+// series makes `time() - antwatcher_sink_last_success_timestamp_seconds` an
+// empty vector, so the alert stays silent for exactly the sink it is meant to
+// catch -- one misconfigured at deploy time that never processes anything.
+func TestRouter_LastSuccessExistsBeforeTheFirstSuccess(t *testing.T) {
+	m := metrics.New("v", "c")
+	b := gochannel.New(topic, nil)
+	r, err := sink.BuildRouter(context.Background(), b, routerCfg, bus.ModeDegrade,
+		[]sink.Instance{{Sink: newCaptureSink("a", sink.ClassLog), StartFrom: bus.Now}}, m, nil)
+	require.NoError(t, err)
+
+	cnt, err := testutil.GatherAndCount(m.Registry, "antwatcher_sink_last_success_timestamp_seconds")
+	require.NoError(t, err)
+	assert.Equal(t, 1, cnt, "the series must exist before the first success")
+	assert.InDelta(t, 0, testutil.ToFloat64(m.SinkLastSuccessTimestamp.WithLabelValues("a")), 0,
+		"zero means never succeeded")
+
+	require.NoError(t, r.Close())
+	require.NoError(t, b.Close())
+}

@@ -24,7 +24,9 @@ Five independent strands, in the order they land:
    terminology and this codebase's `model.Run`.
 
 Nothing here changes the runtime behaviour of the pipeline except strand 5,
-which changes one span name prefix.
+which changes one span name prefix. (No longer true as written: the review
+iterations that followed the fifteen tasks landed several behavioural fixes on
+top. They are listed under Review Follow-Up.)
 
 ## Context (from discovery)
 
@@ -143,6 +145,8 @@ prefix constants and used at lines 118, 152 and 168.
       dummy `GITHUB_WEBHOOK_SECRET`, calling the same targets contributors run
 - [x] do NOT add a separate README drift step: `TestREADMEConfigReferenceMatchesExample`
       already covers it inside `make test`
+      (that test is now `TestConfigDocReferenceMatchesExample` and guards
+      `docs/configuration.md`; renamed by Task 11, see its notes)
 - [x] verify the workflow parses with `actionlint`
 - [x] run tests - must pass before next task
 
@@ -514,6 +518,32 @@ prefix constants and used at lines 118, 152 and 168.
   ("every package at or above 80%") and `make readme` (no drift — only the three
   files above are modified). Both workflows still parse as YAML; the ci.yml change
   is comment-only.
+
+## Review Follow-Up
+
+*Landed after Task 15, in the review iterations. Recorded here because the
+Overview above promised no runtime behaviour change and these are exceptions to
+it — none of them is scope the fifteen tasks planned.*
+
+- `internal/config/url.go`: a `config.URL` type that masks userinfo on every
+  render path (`-check`, `/status`, the startup log). `natsjs.Config.URL` changed
+  from `string` to it. Scheme-less URLs are masked too — `url.Parse` reads
+  `admin:pass@host:4222` as an opaque scheme and reports no userinfo.
+- `internal/config/validate.go`: two `server.webhook_path` rules, rejecting what
+  would panic or over-match on the `net/http` mux.
+- `internal/bus/natsjs/stream.go`: `EnsureStream` refuses a stream that already
+  carries other subjects instead of rewriting its subject list.
+- `internal/bus/natsjs/embedded.go`: a process-wide reservation on `store_dir`,
+  so two embedded servers cannot corrupt one JetStream file store.
+- `internal/sink/stalled.go`: a 1000-entry cap on per-sink stalled tracking.
+- `internal/ghclient/client.go`: `DiscoverHookID` stops on exhausted pagination.
+- `internal/recovery/decide.go`: the exported `Plan` was removed; `group` stayed.
+- `internal/sink/router.go`: `antwatcher_sink_last_success_timestamp_seconds` is
+  created at zero with the other sink series, so the "no recent success" alert in
+  `docs/operations.md` can fire for a sink that has never succeeded.
+- `internal/bus/bustest/suite.go`: proving `DurablePublish` replays the broker's
+  history, so a driver declaring it must declare `HistoricalReplay` too; the
+  suite now says so instead of failing on the replay assertion.
 
 ## Technical Details
 

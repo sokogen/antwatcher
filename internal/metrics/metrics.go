@@ -122,7 +122,7 @@ func New(version, commit string) *Metrics {
 		}, []string{"sink", "class"}),
 		SinkLastSuccessTimestamp: f.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace, Name: "sink_last_success_timestamp_seconds",
-			Help: "Unix time of the last event the sink processed successfully.",
+			Help: "Unix time of the last event the sink processed successfully; 0 until the first success.",
 		}, []string{"sink"}),
 		SinkStalled: f.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: Namespace, Name: "sink_stalled",

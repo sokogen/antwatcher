@@ -98,6 +98,7 @@ groups:
         labels: {severity: critical}
         annotations:
           summary: "sink {{ $labels.sink }} has a backlog but no success for an hour"
+          description: "The series exists from startup and is 0 until the first success, so a sink misconfigured at deploy time — one that has never succeeded — fires this too rather than staying invisible."
 
       - alert: AntwatcherWebhookPublishFailures
         expr: |

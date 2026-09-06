@@ -236,6 +236,10 @@ func (h *handler) initMetrics() {
 		h.metrics.SinkEventsTotal.WithLabelValues(name, class, result)
 	}
 	h.metrics.SinkProcessSeconds.WithLabelValues(name, class)
+	// Zero, not absent: a sink that never succeeds is exactly the case the
+	// "no recent success" alert is for, and an absent series makes that alert
+	// silent forever instead of firing.
+	h.metrics.SinkLastSuccessTimestamp.WithLabelValues(name)
 }
 
 // handle processes one message. Returning an error makes Watermill Nack it;

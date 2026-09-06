@@ -38,7 +38,15 @@ func TestURL_String(t *testing.T) {
 		{"user and password", "nats://admin:p@h:4222", "nats://***@h:4222"},
 		{"every element of a cluster list", "nats://a:b@h1:4222, nats://c:d@h2:4222", "nats://***@h1:4222,nats://***@h2:4222"},
 		{"mixed list masks only what carries credentials", "nats://h1:4222,nats://a:b@h2:4222", "nats://h1:4222,nats://***@h2:4222"},
+		// nats.go accepts a URL without a scheme and prepends one itself, so a
+		// credential spelled this way reaches the broker and must not be
+		// rendered. url.Parse reads it as an opaque "admin:" scheme.
+		{"scheme-less with user and password", "admin:hunter2@h:4222", "***@h:4222"},
+		{"scheme-less with user only", "admin@h:4222", "***@h:4222"},
+		{"scheme-less without userinfo is left alone", "h:4222", "h:4222"},
+		{"scheme-less list", "a:b@h1:4222,h2:4222", "***@h1:4222,h2:4222"},
 		{"unparseable is masked whole", "nats://a:b@h:42 22\x7f", Mask},
+		{"unparseable scheme-less is masked whole", "a:b@h:42 22\x7f", Mask},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -8,12 +8,20 @@ cd "$(dirname "$0")/.."
 doc=docs/configuration.md
 example=antwatcher.example.yml
 tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
 
 awk -v example="$example" '
   /<!-- config-reference:begin/ {
     print
     print "```yaml"
-    while ((getline line < example) > 0) print line
+    # getline returns -1 on a read error and 0 at end of file. Without the
+    # check an unreadable example would silently produce an empty fence and
+    # the script would still report success.
+    while ((rc = (getline line < example)) > 0) print line
+    if (rc < 0) {
+      print "cannot read " example > "/dev/stderr"
+      exit 1
+    }
     close(example)
     print "```"
     skip = 1
@@ -23,5 +31,7 @@ awk -v example="$example" '
   !skip { print }
 ' "$doc" > "$tmp"
 
-mv "$tmp" "$doc"
+# cat, not mv: mktemp creates the file 0600 and mv would carry that mode onto
+# the target, which git does not track and nothing would notice.
+cat "$tmp" > "$doc"
 echo "$doc: configuration reference regenerated from $example"

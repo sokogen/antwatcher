@@ -121,6 +121,14 @@ sinks:
       timeout: 10s
       compression: none         # none | gzip
       headers: {}               # extra headers, values may be secrets
+      tls:                      # used when insecure is false
+        ca_file: ""             # PEM bundle replacing the system roots
+        cert_file: ""           # client certificate for mTLS, with key_file
+        key_file: ""
+        server_name: ""         # overrides the verified certificate name
+      retry:                    # short in-client retry; the bus retries after
+        attempts: 2             # retries after the first attempt, 0 disables
+        backoff: 500ms          # doubles per retry, server delay wins
 
   # Logs to stdout: one JSON line per webhook event, useful for development
   # and for platforms that ship container output.
@@ -154,6 +162,7 @@ sinks:
       project: my-proj
       dataset: github
       table: actions
+      credentials_file: ""      # service account JSON key; empty uses ADC
       ensure_table: true        # create the table on first use
       ensure_view: true         # create the deduplicating <table>_current view
 
@@ -180,6 +189,9 @@ sinks:
       nats-jetstream:
         embedded: false
         url: nats://other:4222
+        # A stream belongs to one subject. Sharing a broker with the ingress
+        # bus needs a stream name of its own, or ensuring the stream fails.
+        stream: ANTWATCHER_DOWNSTREAM
         credentials: ${DOWNSTREAM_NATS_CREDENTIALS:-}
 
 recovery:
@@ -238,7 +250,7 @@ permanent, and no driver constructor touches the network.
 | | | `otlp` | Any OTLP log receiver (Loki through a collector, or a collector directly) | Same client as the trace driver |
 | `analytics` | Sparse run, job, and step rows with a deterministic `record_id` and a `status_rank` | `bigquery` | BigQuery table through the Storage Write API, plus a `<table>_current` view with the latest state per entity | Base table is at-least-once by design; query the view. Table is DAY partitioned on `event_time`, clustered by `repository, kind` |
 | `archive` | The raw envelope and payload as one JSON line per event | `filesystem` | A directory tree `YYYY/MM/DD/<sink>-<ts>-<seq>.jsonl[.gz]`, fsynced before ack | Rotation by size and age, optional gzip, crash repair on start |
-| `forward` | The raw event re-published under a new transport UUID, with hop markers | `bus` | Any registered bus driver and topic, publisher only | Refuses to publish back into the ingress topic; `max_hops` bounds chains |
+| `forward` | The raw event re-published under a new transport UUID, with hop markers | `bus` | Any registered bus driver and topic, publisher only | Refuses to publish back into the ingress topic; `max_hops` bounds chains; needs a destination of its own, see below |
 
 Deterministic identifiers, shared by every class:
 
@@ -271,6 +283,19 @@ What the policy does with a missing capability:
 | `HistoricalReplay` with `start_from: earliest` | `fail`: refuse. `degrade`: downgrade that sink to `now` with a warning. |
 | `DurableConsumers` | Warning: positions are lost on restart. |
 | `Deduplicates` | Informational: sinks are idempotent anyway. |
+
+A forward sink configures a second bus, and its block inherits the driver's defaults
+when a key is omitted -- `embedded: true`, `store_dir: ./data/nats`, `stream: ANTWATCHER`.
+Two collisions are refused rather than papered over, both at first use:
+
+- **One stream, one subject.** A stream's subject list is its identity, so a bus whose
+  `stream` already carries another topic is an error, not an update. A forward target on
+  the ingress broker needs its own `stream`; rewriting the subject would take it away from
+  whoever publishes into it and leave the ingress bus publishing into nothing.
+- **One embedded server per `store_dir`.** nats-server takes no lock on its store
+  directory, and two servers over one JetStream file store corrupt each other's stream and
+  consumer state -- losing events a webhook 2xx already promised. Starting a second
+  embedded server on a directory already in use in the process fails.
 
 Adding a bus driver means implementing the `bus.Bus` interface, declaring its
 capabilities, and passing `bustest.Run`. See [ADR 0002](adr/0002-bus-abstraction.md)

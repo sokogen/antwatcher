@@ -110,8 +110,8 @@ holds one unacknowledged message per subscription. The choice stays inside
 2. Implement `bus.Bus`: `Publish` must honor `ctx` and return nil only under the durability
    guarantee you declare; `Subscribe` must call `bus.ValidateConsumerName`, create an
    independent consumer per name, and return a Subscriber bound to the bus topic
-   (`bus.ErrWrongTopic` otherwise); `Close` must be idempotent and make later calls return
-   `bus.ErrClosed`. Implement `bus.LagReporter` if you declare `ReportsLag`.
+   (`bus.ErrWrongTopic` otherwise); `Close` must be idempotent — a second call returns nil —
+   and must make later `Publish` and `Subscribe` calls return `bus.ErrClosed`. Implement `bus.LagReporter` if you declare `ReportsLag`.
 3. Declare `Capabilities()` truthfully from the configuration (for example JetStream declares
    `Deduplicates` only when `dedup_window > 0`).
 4. Register in `init`: `bus.Register(Name, bus.Driver{Factory: Open, Describer: config.DescriberFunc(Describe)})`.

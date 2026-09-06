@@ -36,8 +36,19 @@ func (u URL) String() string {
 	return strings.Join(parts, ",")
 }
 
+// schemePlaceholder is prepended to a scheme-less URL before parsing and
+// stripped from the result. url.Parse reads "admin:hunter2@host:4222" as the
+// opaque URL of a scheme named "admin" and reports no userinfo, so without
+// this the password of a scheme-less URL -- which nats.go accepts, prepending
+// the scheme itself -- would be rendered verbatim.
+const schemePlaceholder = "mask://"
+
 func maskUserinfo(raw string) string {
-	parsed, err := url.Parse(raw)
+	prefix := ""
+	if !strings.Contains(raw, "://") {
+		prefix = schemePlaceholder
+	}
+	parsed, err := url.Parse(prefix + raw)
 	if err != nil {
 		return Mask
 	}
@@ -51,7 +62,7 @@ func maskUserinfo(raw string) string {
 	if i < 0 {
 		return Mask
 	}
-	return stripped[:i+2] + Mask + "@" + stripped[i+2:]
+	return strings.TrimPrefix(stripped[:i+2]+Mask+"@"+stripped[i+2:], prefix)
 }
 
 // GoString keeps %#v from leaking the credentials.

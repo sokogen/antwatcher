@@ -22,8 +22,12 @@ if [ ! -f "$profile" ]; then
 fi
 
 rows=$(mktemp)
-trap 'rm -f "$rows"' EXIT
+unsorted=$(mktemp)
+trap 'rm -f "$rows" "$unsorted"' EXIT
 
+# awk writes to a file rather than into a pipe: this is /bin/sh, which has no
+# pipefail, so `awk | sort` would report sort's status and a partial package
+# list -- a gate that no longer gates -- would pass silently.
 awk -v prefix="$module/" -v excludes="$excludes" -v threshold="$threshold" '
 	function excluded(pkg,   i, n, list) {
 		n = split(excludes, list, " ")
@@ -53,7 +57,8 @@ awk -v prefix="$module/" -v excludes="$excludes" -v threshold="$threshold" '
 				(pct < threshold ? "FAIL" : "ok")
 		}
 	}
-' "$profile" | sort > "$rows"
+' "$profile" > "$unsorted"
+sort "$unsorted" > "$rows"
 
 if [ ! -s "$rows" ]; then
 	echo "check-coverage: $profile covers no eligible package" >&2

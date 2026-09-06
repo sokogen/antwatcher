@@ -258,18 +258,33 @@ func TestValidateDrivers(t *testing.T) {
 // TestValidate_WebhookPathIsMountable pins the reason the webhook_path rules
 // exist: net/http's ServeMux panics on a pattern it cannot parse, and the
 // receiver mounts the configured path directly. Every path Validate accepts
-// must mount, and no path it rejects may reach the mux.
+// must mount. The converse does not hold and is not asserted -- the mux
+// happily takes `/webhook/` and `/webhook/{id}`, which Validate rejects on
+// purpose because they match more than the configured path -- so the table
+// spells out the verdict per path instead, keeping the rules from silently
+// becoming stricter than they need to be.
 func TestValidate_WebhookPathIsMountable(t *testing.T) {
-	paths := []string{
-		"/webhook", "/gh/hooks", "/a", "/webhook.json",
-		"hook", "", "/webhook/{", "/a{b}c", "/webhook/{id}",
-		"//webhook", "/a/../b", "/webhook/",
+	paths := map[string]bool{
+		"/webhook":      true,
+		"/gh/hooks":     true,
+		"/a":            true,
+		"/webhook.json": true,
+		"/":             true,
+		"hook":          false,
+		"":              false,
+		"/webhook/{":    false,
+		"/a{b}c":        false,
+		"/webhook/{id}": false,
+		"//webhook":     false,
+		"/a/../b":       false,
+		"/webhook/":     false,
 	}
-	for _, p := range paths {
+	for p, wantAccepted := range paths {
 		t.Run(fmt.Sprintf("%q", p), func(t *testing.T) {
 			cfg := validConfig()
 			cfg.Server.WebhookPath = p
 			accepted := cfg.Validate() == nil
+			assert.Equal(t, wantAccepted, accepted, "Validate verdict on %q", p)
 
 			mounts := func() (ok bool) {
 				defer func() { ok = recover() == nil }()
