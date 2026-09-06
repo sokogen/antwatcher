@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/go-github/v88/github"
+	"github.com/google/go-github/v91/github"
 
 	"github.com/sokogen/antwatcher/internal/config"
 )
