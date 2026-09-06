@@ -410,7 +410,7 @@ What the policy does with a missing capability:
 
 Adding a bus driver means implementing the `bus.Bus` interface, declaring its
 capabilities, and passing `bustest.Run`. See [ADR 0002](docs/adr/0002-bus-abstraction.md)
-and `CLAUDE.md`.
+and `AGENTS.md`.
 
 ## GitHub webhook setup
 
@@ -677,4 +677,4 @@ and one capturing sink of every class. Architecture rules (no driver imports out
 `cmd`, no Actions REST API, no handler-side retry or sleep, error classification in every
 driver) are enforced by tests in `internal/archtest`.
 
-`CLAUDE.md` describes the layout and the conventions for adding a bus or sink driver.
+`AGENTS.md` describes the layout and the conventions for adding a bus or sink driver.

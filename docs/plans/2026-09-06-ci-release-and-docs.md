@@ -259,14 +259,32 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 9: AGENTS.md for repository work
 
-- [ ] create `AGENTS.md` at the repository root covering build/test/lint
+- [x] create `AGENTS.md` at the repository root covering build/test/lint
       commands, the layout, the architecture rules enforced by `internal/archtest`,
       the error and registration conventions, and how to add a bus or sink driver
-- [ ] keep it factual and current: every command in it must actually work
-- [ ] replace the body of `CLAUDE.md` with a pointer to `AGENTS.md` plus anything
+- [x] keep it factual and current: every command in it must actually work
+- [x] replace the body of `CLAUDE.md` with a pointer to `AGENTS.md` plus anything
       genuinely Claude-specific, so the two cannot drift apart
-- [ ] verify every command quoted in `AGENTS.md` by running it
-- [ ] run tests - must pass before next task
+- [x] verify every command quoted in `AGENTS.md` by running it
+- [x] run tests - must pass before next task
+- ➕ `CLAUDE.md` pulls the shared text in with an `@AGENTS.md` import rather than
+  a prose "see AGENTS.md", so Claude loads the same words other agents read and a
+  second copy cannot appear. Its only other section says what belongs there:
+  Claude-only instructions, of which there are none today.
+- ➕ the two README lines that pointed contributors at `CLAUDE.md` now point at
+  `AGENTS.md`.
+- ➕ each architecture rule now names the test that enforces it, so a failure
+  message maps back to the rule without reading `internal/archtest`.
+- Verified by running every command quoted in the file: `make build`, `make test`,
+  `make coverage` (all packages at or above 80%), `make lint` (0 issues),
+  `GITHUB_WEBHOOK_SECRET=dummy make check CONFIG=antwatcher.example.yml`,
+  `make readme` (no drift), `go test ./internal/archtest`, and `make docker`,
+  which now succeeds because buildx is installed as a CLI plugin on this machine,
+  unlike when Task 4 was written. `make check` without the secret was also run, to
+  confirm the documented failure.
+- ➕ `AGENTS.md` deliberately does not link `docs/agent-operations.md` yet; Task 10
+  creates that file, and a dead link in a document whose point is being current
+  would be self-defeating.
 
 ### Task 10: docs/agent-operations.md for running the service
 
