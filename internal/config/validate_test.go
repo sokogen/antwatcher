@@ -45,7 +45,7 @@ func TestValidate_Rules(t *testing.T) {
 		{"webhook path rejects a wildcard segment", func(c *Config) { c.Server.WebhookPath = "/webhook/{id}" }, "must not contain \"{\" or \"}\""},
 		{"webhook path rejects a double slash", func(c *Config) { c.Server.WebhookPath = "//webhook" }, "must be a clean path"},
 		{"webhook path rejects dot segments", func(c *Config) { c.Server.WebhookPath = "/a/../webhook" }, "must be a clean path"},
-		{"webhook path rejects a trailing slash", func(c *Config) { c.Server.WebhookPath = "/webhook/" }, "must be a clean path"},
+		{"webhook path rejects a trailing slash", func(c *Config) { c.Server.WebhookPath = "/webhook/" }, "must not end in"},
 		{"max body positive", func(c *Config) { c.Server.MaxBodyBytes = 0 }, "server.max_body_bytes must be > 0"},
 		{"publish timeout positive", func(c *Config) { c.Server.PublishTimeout = 0 }, "server.publish_timeout must be > 0"},
 		{"admin listen required", func(c *Config) { c.Admin.Listen = "" }, "admin.listen is required"},

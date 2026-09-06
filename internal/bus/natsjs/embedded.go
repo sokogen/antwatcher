@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -16,11 +17,47 @@ import (
 // readyTimeout bounds the embedded server start.
 const readyTimeout = 10 * time.Second
 
+// openStores holds the store directory of every embedded server running in
+// this process, so a second one cannot be started on a directory already in
+// use. nats-server takes no lock on StoreDir: two servers over one JetStream
+// file store corrupt each other's stream and consumer state, losing messages
+// a webhook 2xx already promised. It is easy to configure by accident — a
+// forward sink whose nats-jetstream block is omitted inherits the ingress
+// defaults, embedded server and store directory included.
+var openStores = struct {
+	sync.Mutex
+	servers map[string]*server.Server
+}{servers: map[string]*server.Server{}}
+
+// reserveStore claims dir for a server about to start and returns its
+// absolute form, the key to release it with.
+func reserveStore(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("natsjs: store_dir %q: %w", dir, err)
+	}
+	openStores.Lock()
+	defer openStores.Unlock()
+	if _, taken := openStores.servers[abs]; taken {
+		return "", fmt.Errorf("natsjs: an embedded server is already running on store_dir %q in this process; give each bus its own directory", abs)
+	}
+	openStores.servers[abs] = nil
+	return abs, nil
+}
+
+// releaseStore drops the reservation on abs.
+func releaseStore(abs string) {
+	openStores.Lock()
+	defer openStores.Unlock()
+	delete(openStores.servers, abs)
+}
+
 // StartEmbedded starts an in-process nats-server with JetStream storing data
 // in cfg.StoreDir. The server has no TCP listener; clients connect through
 // nats.InProcessServer(srv). logger receives the server's own log lines; nil
-// discards them. The caller stops the server with Shutdown followed by
-// WaitForShutdown.
+// discards them. The store directory is held until the server is stopped, and
+// starting a second server on it fails. The caller stops the server with
+// StopEmbedded.
 func StartEmbedded(cfg Config, logger *slog.Logger) (*server.Server, error) {
 	if cfg.StoreDir == "" {
 		return nil, errors.New("natsjs: store_dir is required for the embedded server")
@@ -28,6 +65,41 @@ func StartEmbedded(cfg Config, logger *slog.Logger) (*server.Server, error) {
 	if err := os.MkdirAll(cfg.StoreDir, 0o750); err != nil {
 		return nil, fmt.Errorf("natsjs: create store_dir: %w", err)
 	}
+	abs, err := reserveStore(cfg.StoreDir)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := startServer(cfg, logger)
+	if err != nil {
+		releaseStore(abs)
+		return nil, err
+	}
+	openStores.Lock()
+	openStores.servers[abs] = srv
+	openStores.Unlock()
+	return srv, nil
+}
+
+// StopEmbedded shuts a server returned by StartEmbedded down, waits for it,
+// and releases its store directory for a later server. It is a no-op on nil
+// and on a server already stopped.
+func StopEmbedded(srv *server.Server) {
+	if srv == nil {
+		return
+	}
+	srv.Shutdown()
+	srv.WaitForShutdown()
+	openStores.Lock()
+	defer openStores.Unlock()
+	for dir, s := range openStores.servers {
+		if s == srv {
+			delete(openStores.servers, dir)
+			return
+		}
+	}
+}
+
+func startServer(cfg Config, logger *slog.Logger) (*server.Server, error) {
 	opts := &server.Options{
 		ServerName: "antwatcher",
 		DontListen: true,
@@ -122,11 +194,7 @@ func (ts *TestServer) Stop() {
 	srv := ts.srv
 	ts.srv = nil
 	ts.mu.Unlock()
-	if srv == nil {
-		return
-	}
-	srv.Shutdown()
-	srv.WaitForShutdown()
+	StopEmbedded(srv)
 }
 
 // Running reports whether the server is up.

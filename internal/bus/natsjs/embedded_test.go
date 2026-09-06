@@ -23,7 +23,7 @@ func TestStartEmbedded(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	srv, err := natsjs.StartEmbedded(natsjs.Config{StoreDir: dir}, logger)
 	require.NoError(t, err)
-	t.Cleanup(func() { srv.Shutdown(); srv.WaitForShutdown() })
+	t.Cleanup(func() { natsjs.StopEmbedded(srv) })
 
 	assert.DirExists(t, dir, "store_dir is created")
 	assert.True(t, srv.JetStreamEnabled())
@@ -33,6 +33,27 @@ func TestStartEmbedded(t *testing.T) {
 	require.NoError(t, err, "clients connect in process")
 	nc.Close()
 	assert.Contains(t, logs.String(), "component=nats-server", "server log lines are routed to slog")
+}
+
+func TestStartEmbedded_RefusesASecondServerOnTheSameStoreDir(t *testing.T) {
+	dir := t.TempDir()
+	srv, err := natsjs.StartEmbedded(natsjs.Config{StoreDir: dir}, nil)
+	require.NoError(t, err)
+
+	// Two servers over one JetStream file store corrupt each other; a forward
+	// sink inheriting the ingress defaults is the way to get there by accident.
+	_, err = natsjs.StartEmbedded(natsjs.Config{StoreDir: dir}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already running on store_dir")
+	_, err = natsjs.StartEmbedded(natsjs.Config{StoreDir: filepath.Join(dir, "..", filepath.Base(dir))}, nil)
+	require.Error(t, err, "the same directory reached by another path")
+
+	natsjs.StopEmbedded(srv)
+	srv, err = natsjs.StartEmbedded(natsjs.Config{StoreDir: dir}, nil)
+	require.NoError(t, err, "the directory is free again once the server stops")
+	natsjs.StopEmbedded(srv)
+	natsjs.StopEmbedded(srv) // no-op on an already stopped server
+	natsjs.StopEmbedded(nil)
 }
 
 func TestTestServerStopStart(t *testing.T) {

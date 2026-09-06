@@ -203,9 +203,15 @@ func (c Config) ValidateWith(router config.Router) error {
 // ValidateIngress implements config.IngressValidator: the target must not be
 // the ingress bus (same driver and topic), which would forward every event
 // back to the sinks in a loop.
+//
+// Only driver and topic are compared here; whether a target on the same
+// broker collides with the ingress bus in some other way is the bus driver's
+// own invariant, checked when the target opens (natsjs, for one, refuses a
+// stream that already carries another topic and an embedded server on a
+// store directory already in use).
 func (c Config) ValidateIngress(ingress config.Bus) error {
 	if c.Driver != "" && c.Driver == ingress.Driver && c.Topic != "" && c.Topic == ingress.Topic {
-		return fmt.Errorf("target (driver %q, topic %q) is the ingress bus: forwarding into the topic the sinks consume from is a loop; use another topic", c.Driver, c.Topic)
+		return fmt.Errorf("target (driver %q, topic %q) is the ingress bus: forwarding into the topic the sinks consume from is a loop; use another topic, and on a shared broker a destination of its own (for nats-jetstream, another stream)", c.Driver, c.Topic)
 	}
 	return nil
 }

@@ -147,6 +147,33 @@ func TestEnsureStreamIdempotentAndUpdates(t *testing.T) {
 	assert.Equal(t, 1, count, "exactly one stream")
 }
 
+func TestEnsureStreamRefusesAStreamCarryingAnotherTopic(t *testing.T) {
+	ts := natsjs.NewTestServer(t)
+	js := jsClient(t, ts)
+	ctx := context.Background()
+	cfg := ts.Config()
+
+	_, err := natsjs.EnsureStream(ctx, js, cfg, topic)
+	require.NoError(t, err)
+
+	// A second bus with the default stream name on the same broker — a forward
+	// target beside the ingress bus — must not take the subject away.
+	_, err = natsjs.EnsureStream(ctx, js, cfg, "other.topic")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already carries subjects")
+
+	s, err := js.Stream(ctx, cfg.Stream)
+	require.NoError(t, err)
+	info, err := s.Info(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{topic}, info.Config.Subjects, "the original subject is untouched")
+
+	cfg.Stream = "OTHER"
+	other, err := natsjs.EnsureStream(ctx, js, cfg, "other.topic")
+	require.NoError(t, err, "its own stream name works")
+	assert.Equal(t, []string{"other.topic"}, other.CachedInfo().Config.Subjects)
+}
+
 func TestStreamConfig(t *testing.T) {
 	cfg := natsjs.DefaultConfig()
 	sc := natsjs.StreamConfig(cfg, topic)

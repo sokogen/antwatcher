@@ -30,6 +30,8 @@ func (c *Config) Validate() error {
 		add("server.webhook_path must start with \"/\" (got %q)", c.Server.WebhookPath)
 	case strings.ContainsAny(c.Server.WebhookPath, "{}"):
 		add("server.webhook_path must not contain \"{\" or \"}\": the path is matched literally, not as a pattern (got %q)", c.Server.WebhookPath)
+	case c.Server.WebhookPath != "/" && strings.HasSuffix(c.Server.WebhookPath, "/"):
+		add("server.webhook_path must not end in \"/\": %q would mount a subtree matching every path under it (try %q)", c.Server.WebhookPath, path.Clean(c.Server.WebhookPath))
 	case path.Clean(c.Server.WebhookPath) != c.Server.WebhookPath:
 		add("server.webhook_path must be a clean path, %q would never match (try %q)", c.Server.WebhookPath, path.Clean(c.Server.WebhookPath))
 	}

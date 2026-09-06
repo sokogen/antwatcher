@@ -15,7 +15,7 @@ retention.
 |---|---|
 | Sink temporarily unavailable | Backlog is kept on the bus and redelivered with a growing delay while the event is inside bus retention. Lag is visible per sink. |
 | Sink down longer than bus retention | The oldest part of its backlog is gone. Retention is a stream limit; size it for the longest outage you want to survive. |
-| Sink hits a permanent error or an undecodable message | That message is recorded as stalled for that sink (by UUID) and re-attempted at the broker's pace. Nothing is discarded; other sinks continue. There is no dead-letter queue. |
+| Sink hits a permanent error or an undecodable message | That message is recorded as stalled for that sink (by UUID) and re-attempted at the broker's pace. Nothing is discarded; other sinks continue. There is no dead-letter queue. Past 1000 stalled messages per sink the failures are logged but no longer listed individually. |
 | Destination rejects part of an OTLP export | Counted in `antwatcher_otlp_rejected_total`, not retried (OTLP partial-success rule). The export counts as success. |
 | Destination unreachable at startup | The sink starts degraded and catches up when the destination is back. Startup and the webhook path are unaffected. |
 | Process restart | Each sink resumes from its durable consumer position. Acked messages are not delivered again. |
@@ -57,7 +57,7 @@ collectors are exported as well.
 | `sink_process_seconds` | `sink`, `class` | Histogram of one `Process` call |
 | `sink_last_success_timestamp_seconds` | `sink` | Unix time of the last successful event |
 | `sink_stalled` | `sink` | 1 while at least one message is stalled for the sink |
-| `sink_stalled_messages` | `sink` | Number of stalled messages |
+| `sink_stalled_messages` | `sink` | Number of stalled messages the sink tracks, capped at 1000 (the cap bounds memory and the `/status` list; further stalled messages are still logged) |
 | `otlp_rejected_total` | `signal` | Items rejected by an OTLP partial success |
 | `recovery_scans_total` | `target`, `result` | `ok`, `error`, `rate_limited` |
 | `recovery_redeliveries_total` | `target` | Redeliveries requested from GitHub |

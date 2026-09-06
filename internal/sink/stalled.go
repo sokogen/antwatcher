@@ -13,6 +13,15 @@ import (
 // so this bounds the log volume of a message that stays stalled for days.
 const stalledLogEvery = 10
 
+// maxStalledEntries caps the messages one sink tracks individually. A sink
+// whose destination rejects everything permanently — an expired OTLP
+// credential, a table whose schema no longer matches — would otherwise grow
+// an entry per message for as long as the bus keeps redelivering, and put all
+// of them in every /status response. Past the cap the failures are still
+// counted and logged, but no longer remembered per message: the first entries
+// already say what is wrong.
+const maxStalledEntries = 1000
+
 // StalledInfo describes one message a sink cannot process because of a
 // permanent error. The message stays on the bus and is re-attempted at the
 // broker's pace; the entry disappears when the same message succeeds.
@@ -35,13 +44,17 @@ type StalledEntry struct {
 
 // stalledSet tracks the stalled messages of one sink by message UUID and
 // keeps antwatcher_sink_stalled{sink} and antwatcher_sink_stalled_messages{sink}
-// in step with it.
+// in step with it. It holds at most maxStalledEntries messages, so both the
+// set and the /status document it feeds stay bounded.
 type stalledSet struct {
 	sink    string
 	metrics *metrics.Metrics
 
 	mu      sync.Mutex
 	entries map[string]*StalledInfo
+	// untracked counts permanent failures of messages that arrived when the
+	// set was full. It only paces their logging; it is not a message count.
+	untracked int
 }
 
 func newStalledSet(sink string, m *metrics.Metrics) *stalledSet {
@@ -52,12 +65,18 @@ func newStalledSet(sink string, m *metrics.Metrics) *stalledSet {
 
 // record upserts the entry for uuid and returns the attempt count and
 // whether this attempt should be logged at error level: the first one and
-// then every stalledLogEvery attempts.
+// then every stalledLogEvery attempts. Once the set holds maxStalledEntries
+// messages a new one is not tracked; its failures report one attempt and are
+// logged at the same pace.
 func (s *stalledSet) record(uuid string, reason error, now time.Time) (attempts int, logNow bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	info, ok := s.entries[uuid]
 	if !ok {
+		if len(s.entries) >= maxStalledEntries {
+			s.untracked++
+			return 1, s.untracked == 1 || s.untracked%stalledLogEvery == 0
+		}
 		info = &StalledInfo{FirstSeen: now}
 		s.entries[uuid] = info
 	}
@@ -82,14 +101,16 @@ func (s *stalledSet) clear(uuid string) bool {
 	return true
 }
 
-// len returns the number of stalled messages.
+// len returns the number of stalled messages the set tracks, at most
+// maxStalledEntries.
 func (s *stalledSet) len() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.entries)
 }
 
-// list returns the stalled messages ordered by first occurrence, then UUID.
+// list returns the tracked stalled messages ordered by first occurrence, then
+// UUID; at most maxStalledEntries of them, so /status stays bounded.
 func (s *stalledSet) list() []StalledEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()

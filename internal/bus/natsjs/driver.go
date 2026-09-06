@@ -212,8 +212,7 @@ func (b *Bus) stopServer() {
 	if b.srv == nil {
 		return
 	}
-	b.srv.Shutdown()
-	b.srv.WaitForShutdown()
+	StopEmbedded(b.srv)
 	b.srv = nil
 }
 

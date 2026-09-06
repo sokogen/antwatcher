@@ -2,6 +2,7 @@ package sink
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -91,4 +92,39 @@ func TestStalledSet_NoMetrics(t *testing.T) {
 	_, _ = s.record("a", errors.New("e"), time.Now())
 	assert.Equal(t, 1, s.len())
 	assert.True(t, s.clear("a"))
+}
+
+func TestStalledSetCapsTheTrackedMessages(t *testing.T) {
+	m := metrics.New("v", "c")
+	s := newStalledSet("tempo", m)
+	now := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	boom := errors.New("invalid argument")
+
+	for i := range maxStalledEntries {
+		s.record(fmt.Sprintf("uuid-%d", i), boom, now)
+	}
+	require.Equal(t, maxStalledEntries, s.len())
+
+	// A destination rejecting everything must not grow the set, nor the
+	// /status document, without bound.
+	attempts, logNow := s.record("over-1", boom, now)
+	assert.Equal(t, 1, attempts)
+	assert.True(t, logNow, "the first untracked failure is still logged")
+	for i := 2; i < stalledLogEvery; i++ {
+		_, logNow = s.record(fmt.Sprintf("over-%d", i), boom, now)
+		assert.False(t, logNow, "untracked failures are logged at the same pace")
+	}
+	_, logNow = s.record("over-10", boom, now)
+	assert.True(t, logNow, "every stalledLogEvery-th untracked failure is logged")
+
+	assert.Equal(t, maxStalledEntries, s.len())
+	assert.Len(t, s.list(), maxStalledEntries)
+	_, count := gauges(t, m, "tempo")
+	assert.InDelta(t, maxStalledEntries, count, 0)
+
+	// The cap does not stop a tracked message from clearing.
+	require.True(t, s.clear("uuid-0"))
+	assert.Equal(t, maxStalledEntries-1, s.len())
+	s.record("over-1", boom, now)
+	assert.Equal(t, maxStalledEntries, s.len(), "the freed slot is taken by the next message")
 }
