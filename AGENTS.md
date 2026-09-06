@@ -88,6 +88,7 @@ docs/adr/                  0001 architecture, 0002 bus, 0003 model & classes, 00
 docs/configuration.md      every field (generated block), driver matrices, webhook and token setup
 docs/operations.md         failure behaviour, endpoints, metrics, alerts, sizing, replicas
 docs/agent-operations.md   installing, configuring and debugging the service elsewhere
+docs/images/               README screenshots, not checked by any test
 docs/plans/                ralphex plans
 deploy/compose/            supporting config for docker-compose.example.yml
 scripts/                   readme-config.sh, check-coverage.sh

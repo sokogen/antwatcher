@@ -478,8 +478,42 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 15: [Final] Documentation sweep
 
-- [ ] confirm README, `AGENTS.md`, `CLAUDE.md` and `docs/` agree with the code
-- [ ] add a CI status badge to README once the workflow has run at least once
+- [x] confirm README, `AGENTS.md`, `CLAUDE.md` and `docs/` agree with the code
+- [x] add a CI status badge to README once the workflow has run at least once
+- The sweep checked claims against the tree, not prose against prose: every
+  markdown link in `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/*.md` and
+  `docs/adr/*.md` resolves relative to its own file; every backticked path exists;
+  every `antwatcher_` metric named in the docs is one of the seventeen declared in
+  `internal/metrics/metrics.go`; every `make` target named anywhere is in the
+  `Makefile`; the `/status` fields `docs/agent-operations.md` tells an agent to
+  read (`ready`, `not_ready_reason`, `bus.connected`, `bus.warnings`,
+  `requested_start_from`, `effective_start_from`, `stalled`, `version`, `commit`)
+  and the six `antwatcher_webhooks_total{result}` values in its response-code
+  table all exist verbatim; the README driver table, the `docs/configuration.md`
+  matrices and `cmd/antwatcher/drivers.go` list the same two bus and six sink
+  drivers; the flags, `:8080`, `127.0.0.1:9090`, `/webhook`, `antwatcher.events`
+  and `sink-<name>` in the README match `internal/config/config.go` and
+  `internal/sink/sink.go`; and AGENTS.md's linter, coverage-exclusion and
+  go-github-surface claims match `.golangci.yml`, `scripts/check-coverage.sh` and
+  `TestActionsRESTAPIIsNeverUsed`.
+- Three disagreements found and fixed: `.github/workflows/ci.yml` credited README
+  drift to `TestREADMEConfigReferenceMatchesExample`, which does not exist — the
+  test is `TestConfigDocReferenceMatchesExample` and it guards
+  `docs/configuration.md`, not the README; the README said all three compose build
+  arguments fall back to `dev`, but `docker-compose.example.yml:35-37` falls back
+  to `dev` only for `VERSION` and to `unknown` for `COMMIT` and `DATE`; and the
+  AGENTS.md layout block had no `docs/images/`, added by Task 13.
+- ⚠️ The badge was added before its precondition was met. `gh api
+  repos/sokogen/antwatcher/actions/runs` reports `total_count: 0` and no
+  registered workflows: `origin/antwatcher-core-pipeline` is still at `dbca8f9`,
+  from before `.github/` existed, so CI has never run. The badge renders "no
+  status" until the first push, and the repository is private, so it needs a
+  logged-in viewer either way. Nothing else can be done from here — merging the
+  branch to `main` is what resolves it.
+- Verified: `make test` (all packages ok), `make lint` (0 issues), `make coverage`
+  ("every package at or above 80%") and `make readme` (no drift — only the three
+  files above are modified). Both workflows still parse as YAML; the ci.yml change
+  is comment-only.
 
 ## Technical Details
 

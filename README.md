@@ -1,5 +1,7 @@
 # antwatcher
 
+[![CI](https://github.com/sokogen/antwatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/sokogen/antwatcher/actions/workflows/ci.yml)
+
 antwatcher turns GitHub Actions webhooks into traces, logs, analytics rows, archives and
 forwarded events, without losing events across destination outages, restarts or short
 receiver outages.
@@ -226,7 +228,8 @@ docker compose -f docker-compose.example.yml up --build
 ```
 
 The compose build passes `VERSION`, `COMMIT` and `DATE` through as build arguments, taken
-from the environment and falling back to `dev`. Export them to stamp the image the way
+from the environment and falling back to `dev` for the version and `unknown` for the other
+two. Export them to stamp the image the way
 `make build` stamps a local binary:
 
 ```sh

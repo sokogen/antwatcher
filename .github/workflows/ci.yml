@@ -36,8 +36,8 @@ jobs:
       - name: Coverage
         run: make coverage
 
-      # README drift is covered by TestREADMEConfigReferenceMatchesExample inside
-      # `make test`, so there is no separate step for it.
+      # Documentation drift is covered by TestConfigDocReferenceMatchesExample
+      # inside `make test`, so there is no separate step for it.
       - name: Validate the example config
         env:
           GITHUB_WEBHOOK_SECRET: ci-dummy-secret
