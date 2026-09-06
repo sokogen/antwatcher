@@ -397,13 +397,48 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 13: Screenshots
 
-- [ ] bring up `docker-compose.example.yml` and feed it the recorded fixtures so
+- [x] bring up `docker-compose.example.yml` and feed it the recorded fixtures so
       Grafana has data
-- [ ] capture the trace waterfall for one run in Tempo, and a Loki view showing
+- [x] capture the trace waterfall for one run in Tempo, and a Loki view showing
       the correlated records
-- [ ] store them under `docs/images/` and reference them from README
-- [ ] keep the files small enough that cloning the repository stays cheap
-- [ ] run tests - must pass before next task
+- [x] store them under `docs/images/` and reference them from README
+- [x] keep the files small enough that cloning the repository stays cheap
+- [x] run tests - must pass before next task
+- ⚠️ **the recorded fixtures cannot be fed verbatim.** They are dated
+  `2026-09-02`; Loki accepted the OTLP push (`antwatcher_sink_events_total{
+  sink="loki",result="ok"} 6`, no error in the collector or in Loki) and its
+  label API then reported `service_name="antwatcher"`, but no `query_range` or
+  `series` call over any window returned a line. Re-feeding the same fixtures
+  with every ISO timestamp shifted into the present made all six queryable
+  immediately. This is the failure mode `docs/agent-operations.md` describes from
+  the other side: the backend has the events and the query window is not the
+  problem — the backend dropped them for age. The shift was a throwaway script
+  over a copy in `/tmp`; the fixtures themselves are untouched.
+- ⚠️ trace IDs are deterministic from the run ID, so feeding the fixtures twice
+  merges both sets of spans into one trace and the waterfall shows each step
+  twice. The screenshots were taken after `docker compose down -v` and exactly
+  one feed: `/api/search` reports one trace, `7 spans`.
+- ➕ the six deliveries were posted with `openssl dgst -sha256 -hmac` signatures
+  to the running receiver, in GitHub's order (run requested, run in_progress, job
+  queued, job in_progress, job completed, run completed). The pipeline reported
+  `webhooks_total{result="published"} 6` and, on the trace class, `ok 2` with
+  `skipped 4` — the four events that are not a completed run or job, skipped by
+  design as Task 10 recorded.
+- ➕ both images are captured at 1440 CSS px on a 2× viewport and downsampled to
+  1440 px wide: `trace-waterfall.png` 171 KB, `logs-correlated.png` 307 KB. The
+  Grafana chrome around the data (nav menu, query editor, logs-volume panel) is
+  collapsed so the frame is the data, not the UI.
+- ➕ the Loki shot expands the *oldest* record rather than the newest, so all six
+  records stay visible above the expansion, which shows the derived `trace` field
+  linking to Tempo and the trace ID it resolves to. That is the correlation the
+  README claims, in one frame.
+- ➕ no feed script was committed. Putting one under `scripts/` would add a Go
+  main package with no tests (`make coverage` gates every package outside `cmd/`
+  at 80%) or a Python dependency this repository does not otherwise have; the
+  procedure is recorded here instead. Regenerating the screenshots is a manual
+  job by design — Post-Completion already notes they are checked by no test.
+- Verified: `make test`, `make lint` (0 issues), `make coverage` (every package at
+  or above 80%) and `make readme` (no drift) all green with the README change.
 
 ### Task 14: Verify acceptance criteria
 

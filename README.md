@@ -44,6 +44,21 @@ And the properties that make it worth putting in front of a webhook:
   gone, and ingress older than GitHub's three-day window is lost. The full table is in
   [operations](docs/operations.md#failure-behaviour).
 
+## What it looks like
+
+One run as a span tree in Tempo — the run, its job and every step, with the step that failed
+carrying the error:
+
+![A GitHub Actions workflow run as a span tree in Grafana Tempo: run:CI over job:test over six step spans, with error markers on the run, the job and the step that failed](docs/images/trace-waterfall.png)
+
+The six deliveries behind that run as records in Loki, each carrying the trace ID, so a
+record links straight back to the span tree:
+
+![The same run as six log records in Grafana Loki, severity-coloured, one expanded to show its link to the Tempo trace and the trace ID](docs/images/logs-correlated.png)
+
+Both are `docker-compose.example.yml`, which runs antwatcher next to an OpenTelemetry
+collector, Tempo, Loki and Grafana — see [Docker](#docker).
+
 ## Quick start
 
 The smallest useful deployment: embedded NATS JetStream for durability, one log sink to
