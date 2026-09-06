@@ -32,6 +32,14 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/antwatcher /antwatcher
 COPY --from=build --chown=65532:65532 /out/data /data
 COPY antwatcher.example.yml /etc/antwatcher/antwatcher.example.yml
+COPY LICENSE /LICENSE
+
+# OCI metadata; `licenses` is the SPDX identifier of the LICENSE at the
+# repository root. The release workflow adds the tag-derived labels on top.
+LABEL org.opencontainers.image.title="antwatcher" \
+      org.opencontainers.image.description="Turns GitHub Actions webhooks into traces, logs, analytics rows, archives and forwarded events" \
+      org.opencontainers.image.source="https://github.com/sokogen/antwatcher" \
+      org.opencontainers.image.licenses="MIT"
 
 VOLUME ["/data"]
 # 8080 webhook listener, 9090 admin listener (bind admin to 0.0.0.0 in the

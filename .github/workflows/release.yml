@@ -45,7 +45,7 @@ jobs:
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
               make build VERSION="$VERSION" COMMIT="$commit" DATE="$date" \
                 BINARY="$PWD/$stage/antwatcher"
-            cp README.md antwatcher.example.yml "$stage/"
+            cp README.md LICENSE antwatcher.example.yml "$stage/"
             tar -czf "dist/$name.tar.gz" -C dist "$name"
             rm -rf "$stage"
           done

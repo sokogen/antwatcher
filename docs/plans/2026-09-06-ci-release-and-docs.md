@@ -361,17 +361,39 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 12: Rewrite README for consumers
 
-- [ ] rewrite `README.md` around: what problem it solves, what you get, quick
+- [x] rewrite `README.md` around: what problem it solves, what you get, quick
       start, configuration pointer, and licence/authorship
-- [ ] keep the architecture section short — a paragraph and a diagram, with the
+- [x] keep the architecture section short — a paragraph and a diagram, with the
       detail linked to the ADRs
-- [ ] link to `docs/configuration.md`, `docs/operations.md`,
+- [x] link to `docs/configuration.md`, `docs/operations.md`,
       `docs/agent-operations.md` and `docs/adr/`
-- [ ] add a `LICENSE` file at the repository root: MIT, copyright Gennady
+- [x] add a `LICENSE` file at the repository root: MIT, copyright Gennady
       Sokolachko, year 2026
-- [ ] add a short licence section to README pointing at `LICENSE`, and set the
+- [x] add a short licence section to README pointing at `LICENSE`, and set the
       SPDX identifier `MIT` where the packaging metadata needs one
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
+- ➕ the "Guarantees" table moved to `docs/operations.md` as "Failure behaviour".
+  It is the last reference-sized block Task 11 left in the README; what a
+  consumer needs from it is now five bullets under "What you get", each linking
+  to the table. The two ADRs that cited "the guarantees stated in the README"
+  (0001, 0002) now cite the new location, and `AGENTS.md`'s layout line for
+  `docs/operations.md` names the section.
+- ➕ the architecture section became "How it works": one paragraph plus the
+  diagram, with the three paragraphs of message-format detail folded into that
+  paragraph and the depth left to the ADR links.
+- ➕ the SPDX identifier went into the `Dockerfile` as OCI image labels
+  (`org.opencontainers.image.licenses="MIT"` with title, description and
+  source), the only packaging metadata this repository has — there is no
+  `package.json` or equivalent. `docker/metadata-action` adds its tag-derived
+  labels on top at release time.
+- ➕ `LICENSE` also ships inside the image (`/LICENSE`) and inside every release
+  archive, since MIT requires the notice to travel with copies of the software.
+- Verified: `make test`, `make lint` (0 issues), `make coverage` (every package
+  at or above 80%), `make readme` (no drift), `go test ./internal/archtest`
+  (both doc tests green, so the compact driver table still names every shipped
+  driver), `actionlint` v1.7.12 in a temp `GOBIN` over both workflows (0 errors,
+  go.mod and go.sum untouched), and a `docker build` whose image reports the
+  four labels, runs `antwatcher version`, and carries `/LICENSE`.
 
 ### Task 13: Screenshots
 

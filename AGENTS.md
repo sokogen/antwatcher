@@ -86,7 +86,7 @@ internal/recovery/         scan / group / redeliver loop
 internal/archtest/         architecture rules as tests (see below)
 docs/adr/                  0001 architecture, 0002 bus, 0003 model & classes, 0004 errors & retries
 docs/configuration.md      every field (generated block), driver matrices, webhook and token setup
-docs/operations.md         endpoints, metrics, alert rules, sizing, single-replica notes
+docs/operations.md         failure behaviour, endpoints, metrics, alerts, sizing, replicas
 docs/agent-operations.md   installing, configuring and debugging the service elsewhere
 docs/plans/                ralphex plans
 deploy/compose/            supporting config for docker-compose.example.yml

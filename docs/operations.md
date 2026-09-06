@@ -1,9 +1,33 @@
 # Operations
 
-What antwatcher exposes once it runs — endpoints, metrics, alert rules — and the
-numbers to size it by. The configuration fields these sections refer to are in the
-[configuration reference](configuration.md); the procedure for deploying and
-debugging an instance is in [agent-operations](agent-operations.md).
+What antwatcher does when something breaks, what it exposes once it runs —
+endpoints, metrics, alert rules — and the numbers to size it by. The
+configuration fields these sections refer to are in the [configuration
+reference](configuration.md); the procedure for deploying and debugging an
+instance is in [agent-operations](agent-operations.md).
+
+## Failure behaviour
+
+The contract, stated honestly. At-least-once delivery to every sink, bounded by the bus
+retention.
+
+| Situation | Behavior |
+|---|---|
+| Sink temporarily unavailable | Backlog is kept on the bus and redelivered with a growing delay while the event is inside bus retention. Lag is visible per sink. |
+| Sink down longer than bus retention | The oldest part of its backlog is gone. Retention is a stream limit; size it for the longest outage you want to survive. |
+| Sink hits a permanent error or an undecodable message | That message is recorded as stalled for that sink (by UUID) and re-attempted at the broker's pace. Nothing is discarded; other sinks continue. There is no dead-letter queue. |
+| Destination rejects part of an OTLP export | Counted in `antwatcher_otlp_rejected_total`, not retried (OTLP partial-success rule). The export counts as success. |
+| Destination unreachable at startup | The sink starts degraded and catches up when the destination is back. Startup and the webhook path are unaffected. |
+| Process restart | Each sink resumes from its durable consumer position. Acked messages are not delivered again. |
+| Receiver unavailable or publish slow | GitHub gets a `503` (or a timeout) and records a failed delivery. Nothing was accepted, so nothing is lost silently. |
+| Receiver back within 3 days, recovery enabled | A full scan of the deliveries API at start, incremental scans afterwards. Every GUID without a `2xx` is redelivered by GitHub through the normal receiver path. |
+| GitHub API down or token invalid | Recovery is degraded (metric and `/status` reason). Ingress continues. |
+| Duplicate webhook | Accepted. JetStream collapses repeats inside `dedup_window`; deterministic IDs make trace, log, and archive projections idempotent; analytics is deduplicated in the `_current` view. |
+| New sink with `start_from: earliest` | Receives the retained history first, when the bus can replay. Otherwise the policy decides (fail, or downgrade to `now` with a warning). |
+| Bus without a required capability | Startup fails, or starts degraded with the warning shown in `/status`, according to `bus.on_missing_capability`. A non-durable bus is dev-only and says so. |
+| Secrets | `serve -check` and `/status` never print secret values. |
+| History older than bus retention | Not recoverable. By design. |
+| Missed ingress older than GitHub's 3-day delivery window | Considered lost. |
 
 ## Endpoints
 

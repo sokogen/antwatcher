@@ -1,81 +1,48 @@
 # antwatcher
 
-antwatcher turns GitHub Actions webhooks into traces, logs, analytics records, archives,
-and forwarded events, without losing events across destination outages, restarts, or
-short receiver outages.
+antwatcher turns GitHub Actions webhooks into traces, logs, analytics rows, archives and
+forwarded events, without losing events across destination outages, restarts or short
+receiver outages.
 
-It is a single Go binary. GitHub posts `workflow_run` and `workflow_job` webhooks to it,
-every delivery is stored on a durable bus before GitHub gets a `2xx`, and each configured
-destination consumes the bus independently at its own pace.
+GitHub keeps a workflow run behind a UI and a REST API you have to poll, and its webhook
+deliveries are replayable for three days. antwatcher takes each delivery as it arrives,
+stores it on a durable bus before answering GitHub, and lets every destination consume that
+bus at its own pace. Your CI history then lives in the tools you already run: a span tree
+per run in Tempo or Jaeger, correlated records in Loki, sparse rows in BigQuery, the raw
+JSON on disk.
 
 > **Webhooks are the source of truth. The bus provides durability and replay. The GitHub
 > deliveries API repairs missed ingress. Destinations consume independently.**
 
-The Actions REST API is never used to reconstruct runs, jobs, or steps.
+One Go binary, one YAML file. The Actions REST API is never used to reconstruct runs, jobs
+or steps.
 
-## Architecture
+## What you get
 
-```
-                 HMAC     publish (durable)      2xx only after PubAck
-GitHub ─POST──▶ receiver ───────────────▶ bus ────────────────────────▶ GitHub
-                 :8080                    │  topic antwatcher.events
-                                          │  one message per delivery
-                                          │  (envelope metadata + raw payload)
-                                          │
-              ┌───────────────────────────┼───────────────────────────┐
-              │ consumer sink-tempo       │ consumer sink-bq          │ consumer sink-raw ...
-              ▼                           ▼                           ▼
-        ┌───────────┐               ┌───────────┐               ┌───────────┐
-        │ Normalize │               │ Normalize │               │  raw env  │
-        │  ▼ trace  │               │  ▼ analyt.│               │  ▼ archive│
-        │ otlp drv  │               │ bigquery  │               │ filesystem│
-        └─────┬─────┘               └─────┬─────┘               └─────┬─────┘
-              ▼                           ▼                           ▼
-            Tempo                      BigQuery                   ./data/archive
+Each sink is one named consumer of the bus, configured by class and driver:
 
-        ack on success · nack on error → broker redelivery with growing delay
-        permanent error → message stalled for that sink, re-attempted, never dropped
+| Class | What it emits | Drivers | Destination |
+|---|---|---|---|
+| `trace` | One span tree per workflow run | `otlp` | Any OTLP trace receiver: Tempo, Jaeger, an OpenTelemetry collector |
+| `log` | One record per delivery, correlated with the trace | `stdout`, `otlp` | Process stdout, or any OTLP log receiver such as Loki behind a collector |
+| `analytics` | Sparse run, job and step rows | `bigquery` | A BigQuery table through the Storage Write API, plus a `_current` view |
+| `archive` | The raw envelope and payload, one JSON line each | `filesystem` | A dated directory tree, fsynced before ack |
+| `forward` | The raw event, re-published with hop markers | `bus` | Another bus topic, for a downstream consumer |
 
-recovery (optional): GitHub deliveries API ──▶ redeliver GUIDs without a 2xx ──▶ receiver
-admin :9090: /metrics /status /healthz /readyz
-```
+And the properties that make it worth putting in front of a webhook:
 
-Every message on the bus is one webhook delivery: the Watermill UUID is the GitHub
-delivery GUID, the metadata carries the envelope (`delivery_guid`, `event`, `action`,
-`hook_id`, `received_at`, `repository_id`, `repository`, `schema_version`), and the
-payload is the GitHub JSON byte for byte. The retained log of the bus is therefore the raw
-history for its retention window.
-
-Each sink is an independent named consumer (`sink-<name>`) with its own position. A slow
-or broken sink never affects another. Sinks are idempotent through deterministic IDs
-derived from GitHub identifiers, so redelivery is always safe.
-
-The design decisions are recorded in the ADRs under [`docs/adr`](docs/adr):
-[architecture](docs/adr/0001-architecture.md), [bus abstraction](docs/adr/0002-bus-abstraction.md),
-[model and classes](docs/adr/0003-model-and-classes.md), [errors and retries](docs/adr/0004-errors-and-retries.md).
-
-## Guarantees
-
-The contract, stated honestly. At-least-once delivery to every sink, bounded by the bus
-retention.
-
-| Situation | Behavior |
-|---|---|
-| Sink temporarily unavailable | Backlog is kept on the bus and redelivered with a growing delay while the event is inside bus retention. Lag is visible per sink. |
-| Sink down longer than bus retention | The oldest part of its backlog is gone. Retention is a stream limit; size it for the longest outage you want to survive. |
-| Sink hits a permanent error or an undecodable message | That message is recorded as stalled for that sink (by UUID) and re-attempted at the broker's pace. Nothing is discarded; other sinks continue. There is no dead-letter queue. |
-| Destination rejects part of an OTLP export | Counted in `antwatcher_otlp_rejected_total`, not retried (OTLP partial-success rule). The export counts as success. |
-| Destination unreachable at startup | The sink starts degraded and catches up when the destination is back. Startup and the webhook path are unaffected. |
-| Process restart | Each sink resumes from its durable consumer position. Acked messages are not delivered again. |
-| Receiver unavailable or publish slow | GitHub gets a `503` (or a timeout) and records a failed delivery. Nothing was accepted, so nothing is lost silently. |
-| Receiver back within 3 days, recovery enabled | A full scan of the deliveries API at start, incremental scans afterwards. Every GUID without a `2xx` is redelivered by GitHub through the normal receiver path. |
-| GitHub API down or token invalid | Recovery is degraded (metric and `/status` reason). Ingress continues. |
-| Duplicate webhook | Accepted. JetStream collapses repeats inside `dedup_window`; deterministic IDs make trace, log, and archive projections idempotent; analytics is deduplicated in the `_current` view. |
-| New sink with `start_from: earliest` | Receives the retained history first, when the bus can replay. Otherwise the policy decides (fail, or downgrade to `now` with a warning). |
-| Bus without a required capability | Startup fails, or starts degraded with the warning shown in `/status`, according to `bus.on_missing_capability`. A non-durable bus is dev-only and says so. |
-| Secrets | `serve -check` and `/status` never print secret values. |
-| History older than bus retention | Not recoverable. By design. |
-| Missed ingress older than GitHub's 3-day delivery window | Considered lost. |
+- **Nothing is dropped.** GitHub only sees a `2xx` after the delivery is durably stored.
+  A destination that is down accumulates a backlog and catches up; a message it can never
+  accept is recorded as stalled and re-attempted, not discarded.
+- **Sinks are independent.** Each has its own durable position, its own lag, its own
+  failures. A broken BigQuery credential does not stop the traces.
+- **Redelivery is safe.** IDs are derived deterministically from GitHub identifiers, so
+  replaying an event overwrites rather than duplicates.
+- **Missed ingress repairs itself.** Optional recovery scans the GitHub deliveries API and
+  asks GitHub to redeliver every GUID that never got a `2xx`.
+- **The limits are stated.** Bus retention is the outage budget, history older than it is
+  gone, and ingress older than GitHub's three-day window is lost. The full table is in
+  [operations](docs/operations.md#failure-behaviour).
 
 ## Quick start
 
@@ -144,53 +111,77 @@ stdout, one archive sink to disk. No external services.
    curl -s http://127.0.0.1:9090/metrics | grep antwatcher_
    ```
 
-The container image does the same with `docker compose -f docker-compose.example.yml up`,
-adding Grafana Tempo and Loki behind an OpenTelemetry collector. See [Docker](#docker).
+To see traces and logs in a UI instead, `docker compose -f docker-compose.example.yml up`
+runs the same service next to an OpenTelemetry collector, Tempo, Loki and Grafana. See
+[Docker](#docker).
+
+## How it works
+
+The receiver verifies the HMAC, publishes the delivery to the bus, and answers GitHub only
+once the bus has acknowledged it. Every message is one webhook delivery: the Watermill UUID
+is the GitHub delivery GUID, the metadata carries the envelope (`delivery_guid`, `event`,
+`action`, `hook_id`, `received_at`, `repository_id`, `repository`, `schema_version`), and
+the payload is the GitHub JSON byte for byte — so the retained log of the bus is the raw
+history for its retention window. Each sink subscribes as `sink-<name>`, normalizes the
+payload into the projection its class needs, and acks on success or nacks on failure,
+leaving every retry to the broker.
+
+```
+                 HMAC     publish (durable)      2xx only after PubAck
+GitHub ─POST──▶ receiver ───────────────▶ bus ────────────────────────▶ GitHub
+                 :8080                    │  topic antwatcher.events
+              ┌───────────────────────────┼───────────────────────────┐
+              │ consumer sink-tempo       │ consumer sink-bq          │ consumer sink-raw
+              ▼                           ▼                           ▼
+        ┌───────────┐               ┌───────────┐               ┌───────────┐
+        │ Normalize │               │ Normalize │               │  raw env  │
+        │  ▼ trace  │               │  ▼ analyt.│               │  ▼ archive│
+        │ otlp drv  │               │ bigquery  │               │ filesystem│
+        └─────┬─────┘               └─────┬─────┘               └─────┬─────┘
+              ▼                           ▼                           ▼
+            Tempo                      BigQuery                   ./data/archive
+
+recovery (optional): GitHub deliveries API ──▶ redeliver GUIDs without a 2xx ──▶ receiver
+admin :9090: /metrics /status /healthz /readyz
+```
+
+The decisions behind this shape are recorded in the ADRs under [`docs/adr`](docs/adr):
+[architecture](docs/adr/0001-architecture.md), [bus abstraction](docs/adr/0002-bus-abstraction.md),
+[model and classes](docs/adr/0003-model-and-classes.md), [errors and retries](docs/adr/0004-errors-and-retries.md).
 
 ## Configuration
 
-antwatcher reads one YAML file: a `server` block, one `bus`, any number of `sinks`, and
-an optional `recovery` block. `serve -config antwatcher.yml -check` validates it and
-prints the effective configuration with secrets masked.
+antwatcher reads one YAML file: a `server` block, one `bus`, any number of `sinks`, and an
+optional `recovery` block. `serve -config antwatcher.yml -check` validates it and prints
+the effective configuration with secrets masked.
 
-Every field with its default, the driver matrices, the GitHub webhook setup and the token
-a recovery target needs are in the [configuration reference](docs/configuration.md).
-
-Where a sink can send events:
-
-| Class | What it emits | Drivers | Destination |
-|---|---|---|---|
-| `trace` | One span tree per workflow run | `otlp` | Any OTLP trace receiver: Tempo, Jaeger, an OpenTelemetry collector |
-| `log` | One record per delivery, correlated with the trace | `stdout`, `otlp` | Process stdout, or any OTLP log receiver such as Loki behind a collector |
-| `analytics` | Sparse run, job and step rows | `bigquery` | A BigQuery table through the Storage Write API, plus a `_current` view |
-| `archive` | The raw envelope and payload, one JSON line each | `filesystem` | A dated directory tree, fsynced before ack |
-| `forward` | The raw event, re-published with hop markers | `bus` | Another bus topic, for a downstream consumer |
+Every field with its default, the driver matrices, the GitHub webhook setup and the token a
+recovery target needs are in the [configuration reference](docs/configuration.md).
 
 The bus underneath is `nats-jetstream`, embedded in the process or external, for anything
 that has to survive a restart; `gochannel` is in-process and non-durable, for development
 and tests. What each bus guarantees, and what happens when it cannot, is the capability
-matrix in the [configuration reference](docs/configuration.md#bus-drivers-and-capabilities).
+matrix in the
+[configuration reference](docs/configuration.md#bus-drivers-and-capabilities).
 
 ## Operations
 
-The admin listener serves `/metrics`, `/status`, `/healthz` and `/readyz`. Those
-endpoints, every `antwatcher_` metric, example Prometheus alert rules, retention and
-sizing, and the single-replica notes are in [operations](docs/operations.md).
+The admin listener serves `/metrics`, `/status`, `/healthz` and `/readyz`. Those endpoints,
+every `antwatcher_` metric, example Prometheus alert rules, the failure-behaviour table,
+retention and sizing, and the single-replica notes are in
+[operations](docs/operations.md).
 
-Installing, configuring and debugging an instance in someone else's project, by
-observable signal, is [agent-operations](docs/agent-operations.md).
+Installing, configuring and debugging an instance in someone else's project, by observable
+signal, is [agent-operations](docs/agent-operations.md).
 
 ## Docker
 
 `Dockerfile` builds a static binary in a multi-stage build and ships it in a distroless
 image running as a non-root user. `/data` is a volume for the embedded NATS store and the
 filesystem archive; the configuration is read from `/etc/antwatcher/antwatcher.yml` by
-default.
-
-The build stage runs on the build platform and cross-compiles for the target, so a
-multi-platform build never falls back to emulation. It needs BuildKit — the default
-builder in current Docker, and the deprecated legacy builder cannot expand
-`$BUILDPLATFORM`.
+default. The build stage runs on the build platform and cross-compiles for the target, so a
+multi-platform build never falls back to emulation — which needs BuildKit, the default
+builder in current Docker, as the deprecated legacy builder cannot expand `$BUILDPLATFORM`.
 
 ```sh
 docker build -t antwatcher .
@@ -219,9 +210,9 @@ docker compose -f docker-compose.example.yml up --build
 # status   http://127.0.0.1:9090/status
 ```
 
-The compose build passes `VERSION`, `COMMIT` and `DATE` through as build arguments,
-taken from the environment and falling back to `dev`. Export them to stamp the image
-the way `make build` stamps a local binary:
+The compose build passes `VERSION`, `COMMIT` and `DATE` through as build arguments, taken
+from the environment and falling back to `dev`. Export them to stamp the image the way
+`make build` stamps a local binary:
 
 ```sh
 export VERSION=$(git describe --tags --always --dirty) \
@@ -242,8 +233,13 @@ make check CONFIG=antwatcher.example.yml
 The test suite needs no network and no external services: unit tests use the in-process
 `gochannel` bus, integration tests start an embedded JetStream server in a temporary
 directory, and the end-to-end test drives a signed webhook through the receiver, the bus,
-and one capturing sink of every class. Architecture rules (no driver imports outside
-`cmd`, no Actions REST API, no handler-side retry or sleep, error classification in every
-driver) are enforced by tests in `internal/archtest`.
+and one capturing sink of every class. Architecture rules (no driver imports outside `cmd`,
+no Actions REST API, no handler-side retry or sleep, error classification in every driver)
+are enforced by tests in `internal/archtest`.
 
-`AGENTS.md` describes the layout and the conventions for adding a bus or sink driver.
+[`AGENTS.md`](AGENTS.md) is the contributor's view: the layout, the conventions, and the
+recipes for adding a bus or a sink driver.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE). Copyright (c) 2026 Gennady Sokolachko.

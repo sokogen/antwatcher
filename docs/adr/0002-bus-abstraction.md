@@ -12,7 +12,8 @@ durable, whether a consumer's position survives a restart, whether history can b
 replayed, whether duplicates are collapsed, and how retention is bounded.
 
 We do not want the receiver, the router, or the sinks to know which broker is in use, and
-we do not want a broker's weakness to silently weaken the guarantees stated in the README.
+we do not want a broker's weakness to silently weaken the guarantees stated in
+`docs/operations.md`.
 
 ## Decision
 

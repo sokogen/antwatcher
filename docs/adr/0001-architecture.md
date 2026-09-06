@@ -52,9 +52,9 @@ in metrics and `/status`.
 **Bounded by retention, stated honestly.** A sink's backlog lives on the bus for the
 configured retention. A sink down longer than that loses the oldest part of its backlog.
 History older than retention is not recoverable, and ingress missed longer than GitHub's
-3-day delivery window is lost. These limits are documented in the README and in
-`docs/operations.md`, shown in
-`/status`, and not papered over by any secondary store.
+3-day delivery window is lost. These limits are documented in the failure-behaviour
+table of `docs/operations.md`, shown in `/status`, and not papered over by any
+secondary store.
 
 **Single replica by default.** Embedded NATS and the recovery loop assume one process. A
 multi-replica deployment uses an external NATS and runs recovery on one instance.
