@@ -1,7 +1,10 @@
 # AGENTS.md — working in this repository
 
 Instructions for an agent (or a new contributor) changing antwatcher's code. The
-README is the operator's view; this file is the contributor's view.
+README is the operator's view; this file is the contributor's view. An agent
+*running* antwatcher in another project — choosing drivers, writing a config,
+debugging it from its metrics and `/status` — wants
+`docs/agent-operations.md` instead.
 
 antwatcher turns GitHub Actions webhooks into traces, logs, analytics rows,
 archives and forwarded events, through a durable bus. One Go binary, one module
@@ -82,6 +85,7 @@ internal/ghclient/         go-github wrapper: hook deliveries, hook discovery, r
 internal/recovery/         scan / group / redeliver loop
 internal/archtest/         architecture rules as tests (see below)
 docs/adr/                  0001 architecture, 0002 bus, 0003 model & classes, 0004 errors & retries
+docs/agent-operations.md   installing, configuring and debugging the service elsewhere
 docs/plans/                ralphex plans
 deploy/compose/            supporting config for docker-compose.example.yml
 scripts/                   readme-config.sh, check-coverage.sh

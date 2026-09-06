@@ -288,17 +288,36 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 10: docs/agent-operations.md for running the service
 
-- [ ] create `docs/agent-operations.md` for an agent that installs, configures
+- [x] create `docs/agent-operations.md` for an agent that installs, configures
       and debugs antwatcher in someone else's project
-- [ ] cover: choosing a bus and sinks, writing a config, `-check`, the webhook
+- [x] cover: choosing a bus and sinks, writing a config, `-check`, the webhook
       setup on GitHub, and the fact that TLS must be terminated in front
-- [ ] cover debugging by observable signal: `/status`, `/readyz`, the
+- [x] cover debugging by observable signal: `/status`, `/readyz`, the
       `antwatcher_webhooks_total` result labels, `antwatcher_sink_events_total`,
       consumer lag, and what a `401` versus a `503` on the webhook path means
-- [ ] include the failure modes seen in practice: a signature mismatch is a
+- [x] include the failure modes seen in practice: a signature mismatch is a
       wrong secret, not a bug; events reaching a log backend but not appearing
       means the query window predates the event timestamps
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
+- ➕ `AGENTS.md` now links the new file, both in its opening paragraph and in the
+  layout tree; Task 9 had deliberately left that link out until the file existed.
+- ➕ the document does not repeat the README's reference tables (fields, metrics,
+  alert rules); it links to them and holds only what a reference cannot say —
+  which option to choose, what to verify after a deploy, and how to read a signal.
+  Tasks 11 and 12 move those tables into `docs/`, and the links here move with them.
+- ➕ two further failure modes were added from the code rather than invented:
+  `start_from` applies only when the consumer is created (`natsjs/driver.go:283`
+  logs "consumer exists: keeping its original start position"), so editing it on a
+  live sink does nothing; and `result="skipped"` on the trace class is by design
+  for events that are not a completed run or job, not a lost event.
+- Verified by running what the document tells an operator to run: the minimal
+  config in it passes `-check` (with only defaults filled in), and both quoted
+  failures are the real output — `undefined environment variables:
+  GITHUB_WEBHOOK_SECRET` with the secret unset, and the strict-decode error
+  `field protocoll not found in type otlp.Config` for a typo inside
+  `sinks[].config`. Every endpoint, metric name, result label and HTTP status in
+  the file was read off `internal/admin`, `internal/metrics` and
+  `internal/receiver` rather than from the README.
 
 ### Task 11: Move the reference material out of README
 
