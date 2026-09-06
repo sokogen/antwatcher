@@ -135,16 +135,16 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 3: CI workflow
 
-- [ ] create `.github/workflows/ci.yml` triggered on `push` to `main` and on
+- [x] create `.github/workflows/ci.yml` triggered on `push` to `main` and on
       `pull_request`, one job on `ubuntu-latest`
-- [ ] use `actions/setup-go` with `go-version-file: go.mod` and module caching
+- [x] use `actions/setup-go` with `go-version-file: go.mod` and module caching
       so the Go version has one source of truth
-- [ ] run `make lint`, `make test`, `make coverage`, and `make check` with a
+- [x] run `make lint`, `make test`, `make coverage`, and `make check` with a
       dummy `GITHUB_WEBHOOK_SECRET`, calling the same targets contributors run
-- [ ] do NOT add a separate README drift step: `TestREADMEConfigReferenceMatchesExample`
+- [x] do NOT add a separate README drift step: `TestREADMEConfigReferenceMatchesExample`
       already covers it inside `make test`
-- [ ] verify the workflow parses with `actionlint`
-- [ ] run tests - must pass before next task
+- [x] verify the workflow parses with `actionlint`
+- [x] run tests - must pass before next task
 
 ### Task 4: Cross-compiling Dockerfile
 
