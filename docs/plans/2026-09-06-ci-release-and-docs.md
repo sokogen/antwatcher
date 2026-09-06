@@ -191,14 +191,28 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 6: Release workflow — container image
 
-- [ ] add a job publishing a multi-arch image (linux/amd64, linux/arm64) to
+- [x] add a job publishing a multi-arch image (linux/amd64, linux/arm64) to
       `ghcr.io`, using `permissions: packages: write` and the built-in
       `GITHUB_TOKEN` so no extra secret is needed
-- [ ] derive image tags from the git tag with `docker/metadata-action`
+- [x] derive image tags from the git tag with `docker/metadata-action`
       (`v1.2.3`, `1.2.3`, `1.2`, `latest`)
-- [ ] pass `VERSION`/`COMMIT`/`DATE` build args so the image reports its version
-- [ ] verify the workflow parses with `actionlint`
-- [ ] run tests - must pass before next task
+- [x] pass `VERSION`/`COMMIT`/`DATE` build args so the image reports its version
+- [x] verify the workflow parses with `actionlint`
+- [x] run tests - must pass before next task
+- ➕ `latest` is not listed explicitly: `docker/metadata-action` adds it under its
+  default `latest=auto` flavour for a semver tag that is not a prerelease, which
+  is exactly the wanted behaviour and keeps `v1.2.3-rc1` off `latest`.
+- ➕ the image job stamps the *short* commit through a `stamp` step rather than
+  passing `github.sha` straight through, so an image and an archive built from
+  one tag report identical build metadata.
+- ➕ no `setup-qemu-action`: Task 4 made the Dockerfile cross-compile, so
+  linux/arm64 is built natively on the amd64 runner. GitHub Actions cache
+  (`type=gha`) backs the module download layer.
+- ⚠️ `actionlint` is still not installed on this machine; verified again with
+  v1.7.12 in a temp `GOBIN` (go.mod and go.sum untouched): 0 errors over both
+  workflows, with the `shellcheck` rule inactive because shellcheck is absent.
+  Pushing a real tag is the only way to exercise the push to ghcr.io; that is
+  already recorded under Post-Completion.
 
 ### Task 7: Rename the run span prefix
 
