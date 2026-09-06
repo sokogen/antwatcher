@@ -14,10 +14,27 @@
 # deploy/compose/. Image tags are pinned so the example keeps working: Tempo in
 # particular must stay on 2.x, because 3.0 removed the compactor and reworked
 # ingestion around Kafka, which this single-binary example does not run.
+#
+# The antwatcher image is stamped from the environment: VERSION, COMMIT and DATE
+# are read from the shell (or a .env file) and fall back to dev/unknown/unknown,
+# so a plain `docker compose up --build` still works and reports version `dev`.
+# To stamp a build the way `make build` does:
+#
+#   export VERSION=$(git describe --tags --always --dirty) \
+#          COMMIT=$(git rev-parse --short HEAD) \
+#          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+#   docker compose -f docker-compose.example.yml up --build
+#
+# The stamped values show up in `antwatcher version` and at /status.
 
 services:
   antwatcher:
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+        DATE: ${DATE:-unknown}
     image: antwatcher:local
     restart: unless-stopped
     environment:

@@ -237,12 +237,25 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 8: Compose passes the version through
 
-- [ ] add `build.args` to `docker-compose.example.yml` so `VERSION`, `COMMIT` and
+- [x] add `build.args` to `docker-compose.example.yml` so `VERSION`, `COMMIT` and
       `DATE` reach the image instead of defaulting to `dev`
-- [ ] document in the file header that the values come from the environment and
+- [x] document in the file header that the values come from the environment and
       fall back to `dev` for a plain `docker compose up`
-- [ ] verify a compose build reports a stamped version at `/status`
-- [ ] run tests - must pass before next task
+- [x] verify a compose build reports a stamped version at `/status`
+- [x] run tests - must pass before next task
+- ➕ the fallbacks are `dev`/`unknown`/`unknown`, matching the ldflag defaults in
+  `cmd/antwatcher/main.go`, and `docker compose config` renders them both ways:
+  stamped when `VERSION`/`COMMIT`/`DATE` are exported, defaulted when they are not.
+- ➕ README's compose section now states that the build passes the three arguments
+  through and shows the exports that stamp an image the way `make build` does.
+- Verified end to end on this machine: `docker compose build antwatcher` with
+  `VERSION=v0.0.0-test COMMIT=abc1234 DATE=2026-09-06T00:00:00Z`, then
+  `docker run antwatcher:local version` reporting
+  `antwatcher v0.0.0-test (commit abc1234, built 2026-09-06T00:00:00Z)`, and
+  `/status` on the started container reporting
+  `"version":"v0.0.0-test","commit":"abc1234"`. Compose used BuildKit, so the
+  Task 4 `$BUILDPLATFORM` builder worked without the buildx wiring problem noted
+  there.
 
 ### Task 9: AGENTS.md for repository work
 

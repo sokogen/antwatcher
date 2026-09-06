@@ -650,6 +650,16 @@ docker compose -f docker-compose.example.yml up --build
 # status   http://127.0.0.1:9090/status
 ```
 
+The compose build passes `VERSION`, `COMMIT` and `DATE` through as build arguments,
+taken from the environment and falling back to `dev`. Export them to stamp the image
+the way `make build` stamps a local binary:
+
+```sh
+export VERSION=$(git describe --tags --always --dirty) \
+       COMMIT=$(git rev-parse --short HEAD) \
+       DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
 ## Development
 
 ```sh
