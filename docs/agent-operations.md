@@ -5,10 +5,10 @@ project**. The contributor's view — building, testing, adding drivers — is
 `AGENTS.md` at the repository root; this file assumes you are not changing
 antwatcher's code, you are making it work somewhere.
 
-The complete field-by-field configuration reference and the metric and alert
-tables are in the [README](../README.md). This file is the part that is not a
-reference: what to choose, what to verify, and how to read the signals when it
-misbehaves.
+The complete field-by-field configuration reference is
+[configuration](configuration.md), and the endpoint, metric and alert tables are
+[operations](operations.md). This file is the part that is not a reference: what
+to choose, what to verify, and how to read the signals when it misbehaves.
 
 ## What you are deploying
 
@@ -35,7 +35,7 @@ front, and make sure it:
 
 Plan for **one replica**. Embedded NATS stores the stream on the local disk of
 that one process, and recovery assumes it is the only scanner of a hook. See
-"Single-replica notes" in the README before scaling out.
+["Single-replica notes"](operations.md#single-replica-notes) before scaling out.
 
 ## Choosing a bus
 
@@ -306,8 +306,10 @@ the broker.
 
 ## Reading further
 
-- [README](../README.md) — configuration reference, metric and endpoint tables,
-  example Prometheus alert rules, sizing, single-replica notes
+- [configuration](configuration.md) — every field, the driver matrices, the
+  webhook setup, the recovery token
+- [operations](operations.md) — endpoints, metrics, example Prometheus alert
+  rules, sizing, single-replica notes
 - [ADR 0001](adr/0001-architecture.md) — why the pipeline is shaped this way
 - [ADR 0002](adr/0002-bus-abstraction.md) — the bus contract and capabilities
 - [ADR 0003](adr/0003-model-and-classes.md) — the model and the five classes

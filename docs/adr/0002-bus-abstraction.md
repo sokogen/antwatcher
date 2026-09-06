@@ -117,7 +117,8 @@ holds one unacknowledged message per subscription. The choice stays inside
 5. Write `driver_test.go` with `bustest.Run(t, open)`; pass `bustest.WithOutage` when you
    declare `DurablePublish`. Add capability and policy assertions as in the gochannel test.
 6. Import the package in `cmd/antwatcher/drivers.go`, add it to `busDrivers` in
-   `internal/archtest`, and add a row to the matrices in the README and this ADR.
+   `internal/archtest`, and add a row to the matrices in `docs/configuration.md` and
+   this ADR.
 
 ## Consequences
 

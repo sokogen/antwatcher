@@ -1,7 +1,7 @@
 # AGENTS.md — working in this repository
 
 Instructions for an agent (or a new contributor) changing antwatcher's code. The
-README is the operator's view; this file is the contributor's view. An agent
+README and `docs/` are the operator's view; this file is the contributor's view. An agent
 *running* antwatcher in another project — choosing drivers, writing a config,
 debugging it from its metrics and `/status` — wants
 `docs/agent-operations.md` instead.
@@ -26,7 +26,7 @@ make test                      # go test -race -cover ./..., writes coverage.out
 make coverage                  # per-package coverage gate, reads coverage.out
 make lint                      # golangci-lint v2, pinned, installed into ./bin
 make check CONFIG=antwatcher.example.yml   # build, then validate a config
-make readme                    # regenerate the README config reference from antwatcher.example.yml
+make readme                    # regenerate docs/configuration.md from antwatcher.example.yml
 go test ./internal/archtest     # architecture rules only (fast)
 ```
 
@@ -85,6 +85,8 @@ internal/ghclient/         go-github wrapper: hook deliveries, hook discovery, r
 internal/recovery/         scan / group / redeliver loop
 internal/archtest/         architecture rules as tests (see below)
 docs/adr/                  0001 architecture, 0002 bus, 0003 model & classes, 0004 errors & retries
+docs/configuration.md      every field (generated block), driver matrices, webhook and token setup
+docs/operations.md         endpoints, metrics, alert rules, sizing, single-replica notes
 docs/agent-operations.md   installing, configuring and debugging the service elsewhere
 docs/plans/                ralphex plans
 deploy/compose/            supporting config for docker-compose.example.yml
@@ -114,10 +116,10 @@ commit, deliberately.
 - Every sink driver package — or the client or class package it delegates to —
   calls `sink.Permanent`: drivers classify their errors.
   (`TestEverySinkDriverClassifiesErrors`)
-- The README configuration reference equals `antwatcher.example.yml`; run
-  `make readme` after touching the example.
-  (`TestREADMEConfigReferenceMatchesExample`)
-- The README mentions every registered driver name in backticks.
+- The configuration reference in `docs/configuration.md` equals
+  `antwatcher.example.yml`; run `make readme` after touching the example.
+  (`TestConfigDocReferenceMatchesExample`)
+- The README's driver table mentions every registered driver name in backticks.
   (`TestREADMEListsEveryShippedDriver`)
 
 ## Conventions
@@ -145,8 +147,8 @@ commit, deliberately.
 - **Ordering is never assumed.** GitHub delivers out of order; brokers redeliver
   out of order. Projections carry `status_rank` and timestamps instead.
 - **Keep docs in sync**: a new field goes into `antwatcher.example.yml` (then
-  `make readme`), a new driver into the README matrices, a changed decision into
-  the ADR it belongs to.
+  `make readme`), a new driver into the README table and the `docs/configuration.md`
+  matrices, a changed decision into the ADR it belongs to.
 
 ## How to add a bus driver
 
@@ -162,8 +164,9 @@ commit, deliberately.
 5. `driver_test.go`: `bustest.Run(t, open)`, with `bustest.WithOutage` when you
    declare `DurablePublish`; assert capabilities and their policy consequences.
 6. Import in `cmd/antwatcher/drivers.go`; add to `busDrivers` in
-   `internal/archtest`; add a row to the README and ADR 0002 matrices; add a driver
-   block to `antwatcher.example.yml`.
+   `internal/archtest`; add a row to the `docs/configuration.md` and ADR 0002
+   matrices, name it in the README's bus paragraph, and add a driver block to
+   `antwatcher.example.yml`.
 
 ## How to add a sink driver
 
@@ -177,8 +180,9 @@ commit, deliberately.
 4. `init()`: `sink.RegisterDriver(sink.Class<Class>, Name, Driver())`.
 5. Tests against a fake destination: success, a retryable error, a permanent error,
    and a factory that builds with an unreachable endpoint.
-6. Import in `cmd/antwatcher/drivers.go`; add to the README matrix and
-   `antwatcher.example.yml`; mention it in ADR 0003 if the driver contract changed.
+6. Import in `cmd/antwatcher/drivers.go`; add to the README table, the
+   `docs/configuration.md` matrix and `antwatcher.example.yml`; mention it in
+   ADR 0003 if the driver contract changed.
 
 ## Plans and commits
 

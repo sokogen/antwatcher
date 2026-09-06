@@ -103,8 +103,8 @@ separate concern (`internal/metrics`) and exist.
 6. Write tests: the class's projection is already tested, so test the driver against a
    fake or in-memory destination, cover a retryable and a permanent error, and prove the
    factory builds with an unreachable endpoint.
-7. Import the package in `cmd/antwatcher/drivers.go` and add it to the README matrix and
-   `antwatcher.example.yml`.
+7. Import the package in `cmd/antwatcher/drivers.go` and add it to the README table,
+   the `docs/configuration.md` matrix and `antwatcher.example.yml`.
 
 ## Consequences
 

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Regenerates the configuration reference in README.md from antwatcher.example.yml.
-# The block between the config-reference markers is replaced verbatim; the
-# archtest package asserts the two stay in sync.
+# Regenerates the configuration reference in docs/configuration.md from
+# antwatcher.example.yml. The block between the config-reference markers is
+# replaced verbatim; the archtest package asserts the two stay in sync.
 set -eu
 
 cd "$(dirname "$0")/.."
-readme=README.md
+doc=docs/configuration.md
 example=antwatcher.example.yml
 tmp=$(mktemp)
 
@@ -21,7 +21,7 @@ awk -v example="$example" '
   }
   /<!-- config-reference:end/ { skip = 0 }
   !skip { print }
-' "$readme" > "$tmp"
+' "$doc" > "$tmp"
 
-mv "$tmp" "$readme"
-echo "README.md: configuration reference regenerated from $example"
+mv "$tmp" "$doc"
+echo "$doc: configuration reference regenerated from $example"

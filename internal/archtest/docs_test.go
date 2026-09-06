@@ -16,23 +16,29 @@ import (
 const (
 	configReferenceBegin = "<!-- config-reference:begin"
 	configReferenceEnd   = "<!-- config-reference:end"
+
+	// configDoc holds the generated configuration reference, written by
+	// scripts/readme-config.sh from antwatcher.example.yml.
+	configDoc = "docs/configuration.md"
 )
 
-// TestREADMEConfigReferenceMatchesExample pins the README's configuration
-// reference to antwatcher.example.yml: the block between the markers must be
-// the example file verbatim inside one yaml fence. `make readme` regenerates it.
-func TestREADMEConfigReferenceMatchesExample(t *testing.T) {
+// TestConfigDocReferenceMatchesExample pins the configuration reference in
+// docs/configuration.md to antwatcher.example.yml: the block between the markers
+// must be the example file verbatim inside one yaml fence. `make readme`
+// regenerates it. The block used to live in README.md; it moved to keep the
+// README consumer-sized, and scripts/readme-config.sh writes the new location.
+func TestConfigDocReferenceMatchesExample(t *testing.T) {
 	root := moduleRoot(t)
-	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	doc, err := os.ReadFile(filepath.Join(root, configDoc))
 	require.NoError(t, err)
 	example, err := os.ReadFile(filepath.Join(root, "antwatcher.example.yml"))
 	require.NoError(t, err)
 
-	text := string(readme)
+	text := string(doc)
 	begin := strings.Index(text, configReferenceBegin)
 	end := strings.Index(text, configReferenceEnd)
-	require.NotEqual(t, -1, begin, "README.md lacks the %q marker", configReferenceBegin)
-	require.NotEqual(t, -1, end, "README.md lacks the %q marker", configReferenceEnd)
+	require.NotEqual(t, -1, begin, "%s lacks the %q marker", configDoc, configReferenceBegin)
+	require.NotEqual(t, -1, end, "%s lacks the %q marker", configDoc, configReferenceEnd)
 	require.Less(t, begin, end, "config reference markers are out of order")
 
 	block := text[begin:end]
@@ -44,13 +50,18 @@ func TestREADMEConfigReferenceMatchesExample(t *testing.T) {
 	body := strings.TrimSuffix(strings.TrimPrefix(block, "```yaml\n"), "```\n")
 
 	assert.Equal(t, string(example), body,
-		"README.md configuration reference differs from antwatcher.example.yml; run `make readme`")
+		"%s configuration reference differs from antwatcher.example.yml; run `make readme`", configDoc)
 }
 
-// TestREADMEListsEveryShippedDriver keeps the README matrices in step with the
-// drivers wired into the binary: every driver package imported by
+// TestREADMEListsEveryShippedDriver keeps the README's driver table in step with
+// the drivers wired into the binary: every driver package imported by
 // cmd/antwatcher/drivers.go must be named in the README by its Name constant
 // (the configuration spelling), not by its package name.
+//
+// It still reads README.md after the reference material moved into docs/,
+// deliberately: docs/configuration.md names every driver inside the generated
+// block, so drift there is already impossible, while the README's compact table
+// is hand-written and is the only place a new driver can be forgotten.
 func TestREADMEListsEveryShippedDriver(t *testing.T) {
 	root := moduleRoot(t)
 	readme, err := os.ReadFile(filepath.Join(root, "README.md"))

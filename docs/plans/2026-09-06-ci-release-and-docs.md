@@ -321,19 +321,43 @@ prefix constants and used at lines 118, 152 and 168.
 
 ### Task 11: Move the reference material out of README
 
-- [ ] create `docs/configuration.md` holding the full configuration reference,
+- [x] create `docs/configuration.md` holding the full configuration reference,
       and `docs/operations.md` holding endpoints, metrics, alert rules, sizing
       and single-replica notes
-- [ ] update `scripts/readme-config.sh` to write the config block into
+- [x] update `scripts/readme-config.sh` to write the config block into
       `docs/configuration.md` instead of `README.md`
-- [ ] update `TestREADMEConfigReferenceMatchesExample` to read the new file, and
+- [x] update `TestREADMEConfigReferenceMatchesExample` to read the new file, and
       rename it to match — the test is the reason this cannot be done by moving
       text alone
-- [ ] decide and implement how `TestREADMEListsEveryShippedDriver` is satisfied:
+- [x] decide and implement how `TestREADMEListsEveryShippedDriver` is satisfied:
       either keep a compact driver table in README, or point the test at
       `docs/configuration.md`; record the choice in the test's doc comment
-- [ ] run `make readme` and confirm no drift
-- [ ] run tests - must pass before next task
+- [x] run `make readme` and confirm no drift
+- [x] run tests - must pass before next task
+- ➕ the driver-name check stays on `README.md`, with a compact class → driver
+  table kept there. The reason is recorded in the test's doc comment: the
+  generated block in `docs/configuration.md` already names every driver, because
+  a new driver must appear in `antwatcher.example.yml`, so drift is impossible
+  there; the README table is hand-written and is the only place a driver can be
+  forgotten. The config-reference test was renamed
+  `TestConfigDocReferenceMatchesExample` and reads `docs/configuration.md`.
+- ➕ four more sections moved with the two the task names — "Sink classes and
+  drivers", "Bus drivers and capabilities", "GitHub webhook setup" and "Recovery
+  and token permissions" — into `docs/configuration.md`. They are reference
+  material by the same argument, and Task 12 rewrites README without creating a
+  place to put them.
+- ➕ `scripts/readme-config.sh` and the `make readme` target keep their names, as
+  the task spells the script out by name; both now act on `docs/configuration.md`
+  and say so. Renaming them is a Task 15 question, not a Task 11 one.
+- ➕ the cross-references that pointed at the moved text were updated in the same
+  task: `docs/agent-operations.md` (three), ADRs 0001, 0002, 0003 and 0004 (one
+  each), `AGENTS.md` (layout, architecture rules, the two driver recipes and the
+  `make readme` line), and the README's own `#github-webhook-setup` anchor.
+- Verified: `make readme` twice over, byte-identical the second time (no drift);
+  `TestConfigDocReferenceMatchesExample` proven able to fail by drifting one line
+  of the generated block, then restored; `make test`, `make lint` (0 issues) and
+  `make coverage` (every package at or above 80%) green. README went from 680 to
+  248 lines.
 
 ### Task 12: Rewrite README for consumers
 

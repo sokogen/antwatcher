@@ -61,7 +61,7 @@ silent one.
 **Protocol-level rejections are the only loss, and they are counted.** OTLP partial
 success means the collector accepted the batch but rejected some items; retrying would
 duplicate the accepted ones. The export counts as success, the rejected items are counted
-in `antwatcher_otlp_rejected_total{signal}`, and the README says so.
+in `antwatcher_otlp_rejected_total{signal}`, and `docs/operations.md` says so.
 
 **Startup never depends on a destination.** Sink factories do not dial. An unreachable
 destination surfaces from the first `Process` as a retryable error, so the sink starts
