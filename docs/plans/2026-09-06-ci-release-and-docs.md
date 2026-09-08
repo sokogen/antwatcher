@@ -541,6 +541,16 @@ it — none of them is scope the fifteen tasks planned.*
 - `internal/sink/router.go`: `antwatcher_sink_last_success_timestamp_seconds` is
   created at zero with the other sink series, so the "no recent success" alert in
   `docs/operations.md` can fire for a sink that has never succeeded.
+- `internal/receiver/handler.go`: the `503` response body no longer includes the
+  driver's error text (broker addresses, stream names) — only `"publish failed"`
+  and the delivery GUID. The detail moved exclusively to the log line, because
+  the body reaches GitHub's delivery log, a wider audience than the operator.
+- `internal/config/redact.go`: `secretKeyPattern` widened from
+  `password|passwd` to `pass|pwd|bearer`, changing which keys the fallback
+  redaction masks for driver blocks with no `Describer`.
+- `internal/sink/archive/jsonl.go`: `sweep` matches finalized filenames by full
+  grammar instead of a bare prefix test, fixing a bug where a sink named `raw`
+  sharing a directory with `raw-2` would compress and delete `raw-2`'s files.
 - `internal/bus/bustest/suite.go`: proving `DurablePublish` replays the broker's
   history, so a driver declaring it must declare `HistoricalReplay` too; the
   suite now says so instead of failing on the replay assertion.

@@ -141,7 +141,11 @@ commit, deliberately.
   than failing startup. Only the ingress bus must open at startup.
 - **Config blocks** are opaque `yaml.Node`s decoded with `config.DecodeStrict`
   (unknown keys fail) on top of a `DefaultConfig()`. Secrets are `config.Secret`
-  so `-check` and `/status` mask them. Every driver ships a `Describe` function
+  so `-check` and `/status` mask them. A field that may carry credentials inside
+  a URL (e.g. `nats://user:pass@host:4222`) uses `config.URL` instead: it masks
+  the userinfo on every render path but keeps the host visible for debugging,
+  which `config.Secret`'s all-or-nothing masking can't give (see
+  `internal/bus/natsjs/config.go`). Every driver ships a `Describe` function
   used for validation and redaction; implement `config.DriverValidator` for
   cross-checks against `router`, and `config.IngressValidator` when a sink block
   must be checked against the ingress bus (the forward driver uses it to refuse
