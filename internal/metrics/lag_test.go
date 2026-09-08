@@ -117,8 +117,8 @@ func TestLagPoller_ToleratesErrorsAndLogsOncePerStreak(t *testing.T) {
 	fb.set("good", 4, nil)
 	fb.set("bad", 0, errors.New("consumer not found"))
 	m := New("v", "c")
-	var logs bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logs := &syncBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	p := NewLagPoller(fb, m, 5*time.Millisecond, logger)
 	p.Register("good")
 	p.Register("bad")
@@ -221,4 +221,22 @@ func TestLagPoller_CancelledContextIsNotAFailure(t *testing.T) {
 	cancel()
 	p.Poll(ctx)
 	assert.Empty(t, logs.String(), "no warning during shutdown")
+}
+
+// syncBuffer is a bytes.Buffer safe for the poller's background goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
