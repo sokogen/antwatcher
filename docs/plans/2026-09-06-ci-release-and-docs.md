@@ -206,6 +206,14 @@ prefix constants and used at lines 118, 152 and 168.
 - ➕ `latest` is not listed explicitly: `docker/metadata-action` adds it under its
   default `latest=auto` flavour for a semver tag that is not a prerelease, which
   is exactly the wanted behaviour and keeps `v1.2.3-rc1` off `latest`.
+- ⚠️ post-review correction: `latest=auto` and the release-wide concurrency
+  group only make the run order deterministic, not version-ordered — a hotfix
+  tag for an older line, pushed after a newer release, would run last and take
+  over both the `latest` image tag and GitHub's own "Latest" release badge. The
+  `validate` job now computes `is_latest` by comparing the pushed tag against
+  every release-shaped tag in the repository (`git tag --list 'v*' | sort -V`)
+  and both the `image` job's metadata flavour and the `binaries` job's
+  `gh release create`/`edit --latest` consume that output instead.
 - ➕ the image job stamps the *short* commit through a `stamp` step rather than
   passing `github.sha` straight through, so an image and an archive built from
   one tag report identical build metadata.

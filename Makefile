@@ -40,6 +40,7 @@ $(GOLANGCI_LINT_STAMP):
 	@touch $@
 
 lint: $(GOLANGCI_LINT_STAMP)
+	@test -x $(GOLANGCI_LINT) || { rm -f $(GOLANGCI_LINT_STAMP); $(MAKE) $(GOLANGCI_LINT_STAMP); }
 	$(GOLANGCI_LINT) run ./...
 
 run: build
