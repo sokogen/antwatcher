@@ -11,7 +11,9 @@ server:
   # Address of the webhook listener. Only the webhook path and GET /healthz are
   # served here; metrics and status live on the admin listener.
   listen: ":8080"
-  # Path GitHub posts deliveries to.
+  # Path GitHub posts deliveries to. Must start with "/", must not end in "/"
+  # or contain "{" or "}", and must be a clean path (no "//" or ".."
+  # segments) - the receiver mounts it literally on a net/http ServeMux.
   webhook_path: /webhook
   # Secret configured on the GitHub webhook; every delivery is verified with
   # HMAC-SHA256 over the raw body. Required.

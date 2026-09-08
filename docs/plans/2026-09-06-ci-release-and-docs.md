@@ -529,8 +529,8 @@ it — none of them is scope the fifteen tasks planned.*
   render path (`-check`, `/status`, the startup log). `natsjs.Config.URL` changed
   from `string` to it. Scheme-less URLs are masked too — `url.Parse` reads
   `admin:pass@host:4222` as an opaque scheme and reports no userinfo.
-- `internal/config/validate.go`: two `server.webhook_path` rules, rejecting what
-  would panic or over-match on the `net/http` mux.
+- `internal/config/validate.go`: three `server.webhook_path` rules, rejecting
+  what would panic or over-match on the `net/http` mux.
 - `internal/bus/natsjs/stream.go`: `EnsureStream` refuses a stream that already
   carries other subjects instead of rewriting its subject list.
 - `internal/bus/natsjs/embedded.go`: a process-wide reservation on `store_dir`,
@@ -544,6 +544,11 @@ it — none of them is scope the fifteen tasks planned.*
 - `internal/bus/bustest/suite.go`: proving `DurablePublish` replays the broker's
   history, so a driver declaring it must declare `HistoricalReplay` too; the
   suite now says so instead of failing on the replay assertion.
+- `internal/event/message.go`: `FromMessage` rejects a negative
+  `repository_id`, not just a non-numeric one.
+- `cmd/antwatcher/serve.go`: `closeBuilt` and `run` close `s.receiver`
+  explicitly when shutdown beats `router.Running()`, so the webhook listener's
+  socket is released instead of held until the process exits.
 
 ## Technical Details
 
