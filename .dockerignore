@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.ralphex
+.ralphex-run.sh
+.DS_Store
+bin/
+data/
+dist/
+coverage.out
+coverage.html
+/antwatcher.yml
+docs/
+deploy/
+docker-compose*.yml

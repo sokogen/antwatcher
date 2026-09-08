@@ -1,0 +1,44 @@
+# Runs the checks contributors run locally, through the same make targets, so a
+# green CI means `make lint && make test && make coverage` is green too.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod is the single source of truth for the Go version.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # Reads the profile `make test` just wrote.
+      - name: Coverage
+        run: make coverage
+
+      # Documentation drift is covered by TestConfigDocReferenceMatchesExample
+      # inside `make test`, so there is no separate step for it.
+      - name: Validate the example config
+        env:
+          GITHUB_WEBHOOK_SECRET: ci-dummy-secret
+        run: make check CONFIG=antwatcher.example.yml

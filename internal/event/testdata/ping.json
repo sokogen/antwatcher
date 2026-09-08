@@ -1,0 +1,35 @@
+{
+  "zen": "Keep it logically awesome.",
+  "hook_id": 570000001,
+  "hook": {
+    "type": "Organization",
+    "id": 570000001,
+    "name": "web",
+    "active": true,
+    "events": ["workflow_job", "workflow_run"],
+    "config": {
+      "content_type": "json",
+      "insecure_ssl": "0",
+      "url": "https://antwatcher.example.com/webhook"
+    },
+    "updated_at": "2026-09-02T09:00:00Z",
+    "created_at": "2026-09-02T09:00:00Z",
+    "url": "https://api.github.com/orgs/sokogen-org/hooks/570000001",
+    "ping_url": "https://api.github.com/orgs/sokogen-org/hooks/570000001/pings",
+    "deliveries_url": "https://api.github.com/orgs/sokogen-org/hooks/570000001/deliveries"
+  },
+  "organization": {
+    "login": "sokogen-org",
+    "id": 7654321,
+    "node_id": "O_kgDOAHTCsQ",
+    "url": "https://api.github.com/orgs/sokogen-org",
+    "description": ""
+  },
+  "sender": {
+    "login": "sokogen",
+    "id": 1234567,
+    "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+    "type": "User",
+    "site_admin": false
+  }
+}

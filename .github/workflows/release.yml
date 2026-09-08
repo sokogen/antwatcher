@@ -1,0 +1,211 @@
+# Runs on a version tag and publishes the service alone -- no collector, no
+# Tempo, no Grafana: archives for linux and darwin on amd64 and arm64 with the
+# checksums that cover them, and a linux/amd64 + linux/arm64 image in ghcr.io.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# One tag deleted and re-pushed, or two tags pushed together, would race on
+# `gh release upload --clobber` and interleave the two runs' uploads into one
+# release's assets. The group is repository-wide, not per-ref, so every release
+# run queues behind the previous one instead of racing it. They are queued
+# instead of cancelled: a half-published release is worse than a slow one.
+# `queue: max` keeps every queued run instead of GitHub's default of dropping
+# all but the most recently queued one when a third tag lands while one run is
+# in progress.
+#
+# Queue order is push order, not version order, so it does not by itself decide
+# which release is "latest" -- a hotfix tag for an older line pushed after a
+# newer release would run last and, on order alone, would wrongly take over.
+# The `validate` job below settles that separately by comparing the pushed tag
+# against every release-shaped tag already in the repository.
+concurrency:
+  group: release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  # Tags are attacker-controlled the moment someone with push access can create
+  # one, and both jobs below splice the tag into ldflags and image tags through
+  # Make/shell text substitution -- a tag such as `v1';id;#` breaks out of the
+  # Makefile's single-quoted -ldflags argument and runs arbitrary commands in a
+  # job that holds `contents: write`. Gating on strict semver here closes that
+  # off before the tag reaches either job.
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      is_latest: ${{ steps.latest.outputs.is_latest }}
+    steps:
+      - name: Validate the tag is strict semver
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if ! [[ "$TAG" =~ $semver ]]; then
+            echo "::error::tag '$TAG' is not strict semver (vMAJOR.MINOR.PATCH[-pre][+meta])"
+            exit 1
+          fi
+
+      # Full tag history, not the single commit a default checkout would give,
+      # so the comparison below sees every release ever pushed, not just this one.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # "Latest" is decided by comparing this tag against the release-shaped
+      # tags already in the repository, not by which workflow run happens to
+      # finish last. A prerelease (anything with a `-pre` suffix) never matches
+      # `release` above, so it is never latest -- the same rule
+      # docker/metadata-action's own `latest=auto` flavour applies, but decided
+      # once here so the image tag and the GitHub release listing agree.
+      - name: Decide whether this tag is the newest release
+        id: latest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          release='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          is_latest=false
+          if [[ "$TAG" =~ $release ]]; then
+            highest="$(git tag --list 'v*' | grep -E "$release" | sort -V | tail -n1)"
+            if [ "$TAG" = "$highest" ]; then
+              is_latest=true
+            fi
+          fi
+          echo "is_latest=$is_latest" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    needs: validate
+    runs-on: ubuntu-latest
+    # Needed to create the release and attach the archives to it.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod is the single source of truth for the Go version.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `make build` owns the ldflags, so a binary released here is stamped
+      # exactly like a local one, with the tag as the version.
+      - name: Build the archives
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          mkdir -p dist
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          commit="$(echo "$COMMIT" | cut -c1-7)"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            name="antwatcher_${VERSION}_${os}_${arch}"
+            stage="dist/$name"
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              make build VERSION="$VERSION" COMMIT="$commit" DATE="$date" \
+                BINARY="$PWD/$stage/antwatcher"
+            cp README.md LICENSE antwatcher.example.yml "$stage/"
+            tar -czf "dist/$name.tar.gz" -C dist "$name"
+            rm -rf "$stage"
+          done
+          ( cd dist && sha256sum ./*.tar.gz > checksums.txt )
+          ls -l dist
+
+      # `gh release create` fails if the release already exists, which it does
+      # when the tag was published through the UI, so upload into it instead.
+      # Either way, `--latest`/`gh release edit --latest` is set explicitly from
+      # the `validate` job's version comparison rather than left to GitHub's
+      # default of "most recently published", which would let a hotfix tag for
+      # an older line steal the "Latest" badge from a newer release.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          IS_LATEST: ${{ needs.validate.outputs.is_latest }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt --clobber
+            gh release edit "$TAG" "--latest=$IS_LATEST"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes \
+              "--latest=$IS_LATEST" dist/*.tar.gz dist/checksums.txt
+          fi
+
+  image:
+    needs: validate
+    runs-on: ubuntu-latest
+    # `packages: write` pushes to ghcr.io on the built-in GITHUB_TOKEN, which is
+    # why ghcr.io was chosen: no repository secret has to exist.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The Dockerfile cross-compiles from the build platform, so linux/arm64 is
+      # built natively on the amd64 runner and no QEMU step is needed.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v1.2.3, 1.2.3, 1.2, and latest -- the last decided by the `validate`
+      # job's version comparison, not the default `latest=auto` flavour, which
+      # would tag "latest" onto whichever tag's build happens to run last.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=${{ needs.validate.outputs.is_latest }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      # The short commit is the one the binaries job stamps. The timestamp is
+      # this job's own: the two jobs run in parallel on separate runners, so an
+      # image and an archive from one tag report the same version and commit
+      # but their own build times, minutes apart at most.
+      - name: Stamp the build metadata
+        id: stamp
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          {
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit=$(echo "$COMMIT" | cut -c1-7)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # The same three args the Makefile and the binaries job pass, so
+          # `antwatcher version` inside the image reports the tag.
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ steps.stamp.outputs.commit }}
+            DATE=${{ steps.stamp.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
